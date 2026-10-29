@@ -6,11 +6,11 @@
   <title>Candy Corn Board Optimizer</title>
   <meta name="description" content="Оптимальный порядок покупок Candy Corn и Spider бордов (Halloween Part 3): Candy Corn Gain, Generator Speed, 5 генераторов, CC Boost, Spiders Boost, Gen Cost.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎃</text></svg>">
-  <link rel="stylesheet" href="style.css?v=2.5">
+  <link rel="stylesheet" href="style.css?v=2.6">
 </head>
 <body>
   <header class="top">
-    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.5</span></h1>
+    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.6</span></h1>
     <p class="subtitle">Halloween Part 3 · самый быстрый порядок покупок до конца борда</p>
     <div class="toolbar">
       <nav class="tabs" role="tablist" aria-label="Борд">
@@ -232,7 +232,7 @@
           <p class="row total"><span>Собрано за этот забег</span><strong id="run-total">—</strong></p>
           <p class="row total"><span>×Spiders (Spiders Boost)</span><strong id="spider-mult">—</strong></p>
           <p class="row total"><span>Сейчас по формуле</span><strong id="formula-spiders">—</strong></p>
-          <p class="hint">CC — собранные за забег, ×Sp — Spiders Boost. k = 0.449 выведено по замерам из игры. «Собрано» — по уровням и ценам вкладки Candy Corn плюс CC на руках; проклятия и прочее впиши в поле «Въёбано на курсы frontend разработчика» на вкладке Candy Corn.</p>
+          <p class="hint">CC — собранные за забег, ×Sp — Spiders Boost. k = 0.45 выведено по замерам из игры. «Собрано» — по уровням и ценам вкладки Candy Corn плюс CC на руках, без открытия Gen 2 и Gen 3 (их игра не засчитывает); проклятия и прочее впиши в поле «Въёбано на курсы frontend разработчика» на вкладке Candy Corn.</p>
         </details>
 
         <details class="section">
@@ -261,7 +261,7 @@
         <details class="section">
           <summary>Как это считается</summary>
           <ul class="notes">
-            <li>Spiders за ресет = ⌊ ×Spiders × (CC за забег / 1M)<sup>0.449</sup> ⌋ — от всех Candy Corn, собранных за забег (не падают при покупках). 1-й Spider — за 1M CC.</li>
+            <li>Spiders за ресет = ⌊ ×Spiders × (CC за забег / 1M)<sup>0.45</sup> ⌋ — от Candy Corn, собранных за забег (не падают при покупках). CC, отданные за открытие Gen 2 и Gen 3, не засчитываются. 1-й Spider — за 1M CC.</li>
             <li>Доход Spiders = +Spiders за ресет / длина забега. Spiders Boost умножает его напрямую.</li>
             <li>CC Boost ×1.35 к CC даёт ×1.35<sup>k</sup> к Spiders. Gen Cost ÷1.3 к ценам генераторов — это примерно лишние ln 1.3 / ln(рост цены) уровней каждому генератору, т. е. ×(1 + это/L) к CC.</li>
             <li>Порядок всех покупок перебирается точно. Доход считается непрерывным (без учёта того, что Spiders приходят порциями за ресет).</li>
@@ -305,7 +305,7 @@
 
   <footer class="footer">Не связан с разработчиками игры. Считает по формулам из патчноута Halloween Part 3 и ценам из игры.</footer>
 
-  <script src="calc.js?v=2.5"></script>
-  <script src="app.js?v=2.5"></script>
+  <script src="calc.js?v=2.6"></script>
+  <script src="app.js?v=2.6"></script>
 </body>
 </html>

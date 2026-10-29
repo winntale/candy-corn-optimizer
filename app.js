@@ -48,7 +48,7 @@
     // Spiders
     spBank: '0',
     spRunMinutes: '15',
-    spExp: '0.449',
+    spExp: '0.45',
     ccbLevel: '0',
     ccbPrice: '1',
     ccbGrowth: SPIDER_GROWTH_PLACEHOLDER,
@@ -167,7 +167,7 @@
   }
 
   // v1 had one generator (genLevel/genPrice) and a separate total CC/s field (rate);
-  // before v2.2 the Spider exponent defaulted to a guess of 0.5 (now fitted: 0.449).
+  // the Spider exponent defaulted to a guess of 0.5 before v2.2 and to 0.449 before v2.6 (now fitted: 0.45).
   function migrate(obj) {
     var copy = Object.assign({}, obj);
     if (obj.gen1Level === undefined && obj.genLevel !== undefined) {
@@ -175,7 +175,7 @@
       copy.gen1Price = obj.genPrice;
       copy.gen1Cps = obj.rate;
     }
-    if (obj.spExp === '0.5') copy.spExp = DEFAULTS.spExp;
+    if (obj.spExp === '0.5' || obj.spExp === '0.449') copy.spExp = DEFAULTS.spExp;
     return copy;
   }
 
@@ -481,7 +481,7 @@
   // Spiders by the formula if you reset now and after the last board purchase of the plan.
   function spidersText(p, result, raw) {
     var collected = calc.candyRunTotal(p);
-    var atEnd = collected - p.bank + result.totalCost + result.bankLeft;
+    var atEnd = collected - p.bank + result.totalCost - result.unlockCost + result.bankLeft;
     var mult = spiderMultiplier(raw);
     var k = num(raw, 'spExp');
     var now = calc.spidersForRun(collected, mult, k);

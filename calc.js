@@ -223,6 +223,8 @@
    * Candy Corn collected this run as far as the calculator can see: everything paid for the current
    * board and generator levels (prices recovered back to level 1), plus what is on hand, plus what
    * was spent outside the calculator this run (curses and the like, typed in by hand).
+   * Generator unlocks (Gen 2 100K, Gen 3 25B) do not count toward Spiders: with them the game's
+   * readings at 7B and 8B on hand (+130, +134) do not fit any exponent.
    */
   function candyRunTotal(p) {
     var total = p.bank + (p.curseSpent > 0 ? p.curseSpent : 0);
@@ -233,7 +235,6 @@
     });
     p.generators.forEach(function (g) {
       if (!(g.level >= 1)) return;
-      if (g.candyUnlock) total += g.unlockCost;
       var price = generatorStartPrice(p, g.level, g.price);
       for (var level = 1; level < g.level; level++) {
         total += price;
@@ -383,6 +384,7 @@
     var bank = p.bank;
     var elapsed = 0;
     var totalCost = 0;
+    var unlockCost = 0;
 
     var steps = order.map(function (id) {
       var step = { id: id };
@@ -408,6 +410,7 @@
       bank = Math.max(0, bank - step.cost);
       elapsed += step.wait;
       totalCost += step.cost;
+      if (step.unlock) unlockCost += step.cost;
       waitByKind[step.kind] += step.wait;
       step.elapsed = elapsed;
       step.mult = newRate / rate;
@@ -424,6 +427,7 @@
       steps: steps,
       totalTime: elapsed,
       totalCost: totalCost,
+      unlockCost: unlockCost,
       startRate: startProduction(p),
       finalRate: rate,
       waitByKind: waitByKind,
@@ -654,8 +658,8 @@
 
   /*
    * Spiders for a reset: ⌊ multiplier × (Candy Corn collected this run / 1M)^exponent ⌋.
-   * Fitted to in-game readings: exponent 0.449, multiplier = Spiders Boost (×1.2 per level);
-   * e.g. 236.8M with ×1.2 → 13, 246.8M → 14, 140.1M → 11. First Spider at 1M.
+   * Fitted to in-game readings: exponent 0.45, multiplier = Spiders Boost (×1.2 per level);
+   * e.g. 14.95B with ×1.728 → 130, 15.95B → 134; 246.8M with ×1.2 → 14, 140.1M → 11. First Spider at 1M.
    */
   function spidersForRun(collected, multiplier, exponent) {
     if (!(collected >= 1e6)) return 0;
@@ -700,8 +704,9 @@
    * Production over time if the run follows `order` and then keeps buying generators (the block with
    * the smallest key, each as soon as affordable). Spending never lowers the Candy Corn collected,
    * so buying as early as possible is what brings Spiders soonest.
-   * Returns { events, tail }: rate changes [{ time, rate }] (each holds until the next entry, the last
-   * one forever; events[i + 1] follows the i-th purchase) and the generator ids bought after `order`.
+   * Returns { events, tail }: rate changes [{ time, rate, unlockSpent }] (each holds until the next
+   * entry, the last one forever; events[i + 1] follows the i-th purchase; unlockSpent is the Candy Corn
+   * paid for generator unlocks so far, which Spiders ignore) and the generator ids bought after `order`.
    */
   function candyTimeline(p, order, extraSteps) {
     var gens = p.generators.map(function (g, index) {
@@ -717,7 +722,8 @@
     var speedBought = 0;
     var bank = p.bank;
     var time = 0;
-    var events = [{ time: 0, rate: production }];
+    var unlockSpent = 0;
+    var events = [{ time: 0, rate: production, unlockSpent: 0 }];
 
     function buy(cost) {
       time += Math.max(0, cost - bank) / events[events.length - 1].rate;
@@ -725,13 +731,18 @@
     }
     function buyGenerator(g) {
       buy(g.locked ? g.unlockCost : g.price);
+      if (g.locked) unlockSpent += g.unlockCost;
       if (g.locked) g.locked = false;
       else g.price *= generatorGrowth(p, g.level);
       g.level += 1;
       production += g.gain;
     }
     function record() {
-      events.push({ time: time, rate: production * Math.pow(p.boost.mult, boostBought) * Math.pow(p.speed.mult, speedBought) });
+      events.push({
+        time: time,
+        rate: production * Math.pow(p.boost.mult, boostBought) * Math.pow(p.speed.mult, speedBought),
+        unlockSpent: unlockSpent
+      });
     }
 
     order.forEach(function (id) {
@@ -763,7 +774,8 @@
 
   /*
    * When Spiders reach fromSpiders+1, +2, ... along a timeline that starts with `collected` Candy Corn
-   * already collected. Stops at the last simulated purchase (after it production no longer grows).
+   * already collected. Candy Corn paid for unlocks (event.unlockSpent) is taken out of the collected.
+   * Stops at the last simulated purchase (after it production no longer grows).
    */
   function spiderMilestones(events, collected, fromSpiders, multiplier, exponent) {
     var out = [];
@@ -774,15 +786,19 @@
       var target = 1e6 * Math.pow(n / multiplier, 1 / exponent);
       while (i < events.length - 1) {
         var next = atEvent + events[i].rate * (events[i + 1].time - events[i].time);
-        if (next >= target) break;
+        if (next - unlockSpentAt(events[i]) >= target) break;
         atEvent = next;
         i += 1;
       }
-      var time = events[i].time + (target - atEvent) / events[i].rate;
+      var time = events[i].time + (target + unlockSpentAt(events[i]) - atEvent) / events[i].rate;
       if (time > lastTime && out.length > 0) break;
       out.push({ spiders: n, time: time, collected: target });
     }
     return out;
+  }
+
+  function unlockSpentAt(event) {
+    return event.unlockSpent > 0 ? event.unlockSpent : 0;
   }
 
   /*

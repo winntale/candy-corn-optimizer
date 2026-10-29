@@ -302,11 +302,48 @@ test('optimizeSpiders_ShouldReportProblems_WhenInputIsInvalid', () => {
 });
 
 test('spidersForRun_ShouldMatchGameReadings_WhenSpidersBoostIsBought', () => {
-  assert.equal(calc.spidersForRun(236.81e6, 1.2, 0.449), 13);
-  assert.equal(calc.spidersForRun(246.81e6, 1.2, 0.449), 14);
-  assert.equal(calc.spidersForRun(140.13e6, 1.2, 0.449), 11);
-  assert.equal(calc.spidersForRun(1e6, 1, 0.449), 1);
-  assert.equal(calc.spidersForRun(0.99e6, 1, 0.449), 0);
+  assert.equal(calc.spidersForRun(14.949e9, Math.pow(1.2, 3), 0.45), 130);
+  assert.equal(calc.spidersForRun(15.949e9, Math.pow(1.2, 3), 0.45), 134);
+  assert.equal(calc.spidersForRun(246.71e6, 1.2, 0.45), 14);
+  assert.equal(calc.spidersForRun(140.03e6, 1.2, 0.45), 11);
+  assert.equal(calc.spidersForRun(1e6, 1, 0.45), 1);
+  assert.equal(calc.spidersForRun(0.99e6, 1, 0.45), 0);
+});
+
+function exportF(bank) {
+  // In-game state with Gen 3 open, Spiders Boost level 3 and Gen Cost level 2: 7B on hand → +130, 8B → +134.
+  return candyParams({
+    bank: bank,
+    boost: { level: 25, price: 1.677e9 },
+    speed: { level: 19, price: 7.282e9 },
+    generators: [
+      generator({ level: 45, price: 4.594e6, cps: 656.3e3 }),
+      generator({ level: 37, price: 46.37e6, cps: 5.399e6, candyUnlock: true, unlockCost: 100e3 }),
+      generator({ level: 20, price: 430.3e6, cps: 35.06e6, candyUnlock: true, unlockCost: 25e9 }),
+      generator(), generator()
+    ]
+  });
+}
+
+test('candyRunTotal_ShouldGiveGameSpiders_WhenGeneratorUnlocksAreLeftOut', () => {
+  const mult = Math.pow(1.2, 3);
+  assert.equal(calc.spidersForRun(calc.candyRunTotal(exportF(7e9)), mult, 0.45), 130);
+  assert.equal(calc.spidersForRun(calc.candyRunTotal(exportF(8e9)), mult, 0.45), 134);
+});
+
+test('spiderMilestones_ShouldIgnoreUnlockSpending_WhenGeneratorIsUnlocked', () => {
+  // 1M/s; at t = 10 an unlock for 5M is paid, so 25M collected counts only as 20M.
+  const events = [{ time: 0, rate: 1e6, unlockSpent: 0 }, { time: 10, rate: 1e6, unlockSpent: 5e6 }, { time: 100, rate: 1e6, unlockSpent: 5e6 }];
+  const milestones = calc.spiderMilestones(events, 0, 0, 1, 0.5);
+  assert.equal(Math.round(milestones.find((m) => m.spiders === 3).time), 9, 'before the unlock nothing is taken out');
+  assert.equal(Math.round(milestones.find((m) => m.spiders === 5).time), 30, '25M counted needs 30M collected');
+});
+
+test('simulateCandy_ShouldReportUnlockCost_WhenPlanUnlocksGenerator', () => {
+  const p = exportD();
+  const result = calc.simulateCandy(p, ['gen3', 'gen1']);
+  assert.equal(result.unlockCost, 25e9);
+  assert.ok(result.totalCost > result.unlockCost);
 });
 
 // ---------- reset timing ----------
@@ -346,7 +383,7 @@ test('spiderMilestones_ShouldFollowFormula_WhenRateIsConstant', () => {
 
 test('resetAdvice_ShouldAimAtBestRun_WhenRunJustStarted', () => {
   const fresh = calc.resetCandyParams(exportD());
-  const advice = calc.resetAdvice(fresh, calc.optimizeCandy(fresh), 1.2, 0.449);
+  const advice = calc.resetAdvice(fresh, calc.optimizeCandy(fresh), 1.2, 0.45);
   assert.equal(advice.spidersNow, 0);
   assert.equal(advice.resetNow, false);
   assert.equal(advice.target.spiders, advice.bestRun.spiders);
@@ -355,7 +392,7 @@ test('resetAdvice_ShouldAimAtBestRun_WhenRunJustStarted', () => {
 
 test('resetAdvice_ShouldSayResetNow_WhenRunIsFarPastBestPoint', () => {
   const p = exportD({ bank: 1e13 });
-  const advice = calc.resetAdvice(p, calc.optimizeCandy(p), 1.2, 0.449);
+  const advice = calc.resetAdvice(p, calc.optimizeCandy(p), 1.2, 0.45);
   assert.ok(advice.spidersNow > advice.bestRun.spiders);
   assert.equal(advice.resetNow, true);
   assert.equal(advice.target, null);
@@ -370,7 +407,7 @@ test('candyRunTotal_ShouldAddCurseSpending_WhenItIsTypedIn', () => {
 test('resetAdvice_ShouldListGeneratorsAfterBoard_WhenBoardIsFinished', () => {
   const p = exportD({ boost: { level: 25, price: 1.678e9 }, speed: { level: 20, price: 1.82e10 } });
   const plan = calc.optimizeCandy(p);
-  const advice = calc.resetAdvice(p, plan, 1.2, 0.449);
+  const advice = calc.resetAdvice(p, plan, 1.2, 0.45);
   assert.equal(plan.steps.length, 0);
   assert.ok(advice.afterBoard.length >= 25);
   assert.ok(advice.afterBoard.every((id) => id === 'gen1' || id === 'gen2'));
@@ -381,7 +418,7 @@ test('resetAdvice_ShouldListGeneratorsAfterBoard_WhenBoardIsFinished', () => {
 test('resetAdvice_ShouldGiveResetAfterBoard_WhenBestResetIsMidBoard', () => {
   const p = exportD();
   const plan = calc.optimizeCandy(p);
-  const advice = calc.resetAdvice(p, plan, 1.2, 0.449);
+  const advice = calc.resetAdvice(p, plan, 1.2, 0.45);
   assert.ok(advice.target.time < plan.totalTime, 'best reset comes before the board is done');
   assert.ok(advice.finishTarget.time >= plan.totalTime);
   assert.ok(advice.finishTarget.spiders > advice.target.spiders);
