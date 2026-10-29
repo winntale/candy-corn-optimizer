@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Candy Corn Board Optimizer</title>
+  <meta name="description" content="Оптимальный порядок покупок Candy Corn Gain, Generator Speed и Generator до последнего улучшения борда (Halloween Part 3).">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎃</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>🎃 Candy Corn Board Optimizer <span class="version">v1.0</span></h1>
+    <p class="subtitle">Halloween Part 3 · самый быстрый порядок покупок до последнего улучшения борда</p>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <details class="section" open>
+        <summary>Сейчас в игре</summary>
+        <label class="row"><span>Candy Corn</span><input type="text" data-field="bank" inputmode="decimal" autocomplete="off" spellcheck="false"></label>
+        <label class="row"><span>CC/s</span><input type="text" data-field="rate" inputmode="decimal" autocomplete="off" spellcheck="false"></label>
+        <p class="hint">Числа как в игре: 25B, 1.5Qa, 2e12.</p>
+      </details>
+
+      <details class="section" open>
+        <summary>Улучшения</summary>
+        <div class="upgrade-grid">
+          <span></span><span class="grid-head">Уровень</span><span class="grid-head">Цена след.</span>
+          <span class="name"><i class="dot boost"></i>Candy Corn Gain</span>
+          <input type="text" data-field="boostLevel" inputmode="numeric" autocomplete="off" aria-label="Candy Corn Gain, уровень">
+          <input type="text" data-field="boostPrice" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Candy Corn Gain, цена следующего уровня">
+          <span class="name"><i class="dot speed"></i>Generator Speed</span>
+          <input type="text" data-field="speedLevel" inputmode="numeric" autocomplete="off" aria-label="Generator Speed, уровень">
+          <input type="text" data-field="speedPrice" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Generator Speed, цена следующего уровня">
+          <span class="name"><i class="dot generator"></i>Generator</span>
+          <input type="text" data-field="genLevel" inputmode="numeric" autocomplete="off" aria-label="Generator, уровень">
+          <input type="text" data-field="genPrice" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Generator, цена следующего уровня">
+        </div>
+        <p class="hint">«Цена след.» — сколько стоит следующий уровень прямо сейчас (со всеми скидками Spider-улучшений).</p>
+      </details>
+
+      <details class="section">
+        <summary>Множители и рост цен</summary>
+        <div class="upgrade-grid advanced">
+          <span></span><span class="grid-head">× за ур.</span><span class="grid-head">Рост цены</span><span class="grid-head">Макс.</span>
+          <span class="name"><i class="dot boost"></i>CC Gain</span>
+          <input type="text" data-field="boostMult" inputmode="decimal" autocomplete="off" aria-label="Candy Corn Gain, множитель за уровень">
+          <input type="text" data-field="boostGrowth" inputmode="decimal" autocomplete="off" aria-label="Candy Corn Gain, рост цены">
+          <input type="text" data-field="boostMax" inputmode="numeric" autocomplete="off" aria-label="Candy Corn Gain, максимум уровней">
+          <span class="name"><i class="dot speed"></i>Gen Speed</span>
+          <input type="text" data-field="speedMult" inputmode="decimal" autocomplete="off" aria-label="Generator Speed, множитель за уровень">
+          <input type="text" data-field="speedGrowth" inputmode="decimal" autocomplete="off" aria-label="Generator Speed, рост цены">
+          <input type="text" data-field="speedMax" inputmode="numeric" autocomplete="off" aria-label="Generator Speed, максимум уровней">
+          <span class="name"><i class="dot generator"></i>Generator</span>
+          <span class="fixed" title="Производство генератора пропорционально уровню">1 + 1/ур.</span>
+          <input type="text" data-field="genGrowth" inputmode="decimal" autocomplete="off" aria-label="Generator, рост цены">
+          <span class="fixed">∞</span>
+        </div>
+        <p class="hint">Значения по умолчанию — из патчноута. Меняй, только если в игре по-другому.</p>
+      </details>
+
+      <details class="section" open>
+        <summary>Настройки</summary>
+        <label class="check"><input type="checkbox" data-field="group"> Объединять одинаковые покупки подряд</label>
+      </details>
+
+      <details class="section">
+        <summary>Экспорт / импорт</summary>
+        <textarea id="transfer" rows="3" spellcheck="false" placeholder="Экспорт положит сюда строку. Для импорта вставь строку и нажми «Импорт»."></textarea>
+        <div class="buttons">
+          <button type="button" id="export">Экспорт</button>
+          <button type="button" id="import">Импорт</button>
+          <button type="button" id="reset" class="ghost">Сброс</button>
+        </div>
+        <p class="hint" id="transfer-status" role="status"></p>
+      </details>
+
+      <details class="section">
+        <summary>Как это считается</summary>
+        <ul class="notes">
+          <li>Скорость = CC/s × Gain<sup>ур.</sup> × Speed<sup>ур.</sup> × (уровень генератора / текущий уровень). Generator с ур. L на L+1 даёт ×(1 + 1/L).</li>
+          <li>Цена каждого следующего уровня = цена × рост цены.</li>
+          <li>Покупка — сразу, как хватает Candy Corn. Перебираются все порядки покупок, выбирается самый быстрый путь до максимума Gain и Speed. Generator качается ровно столько, сколько ускоряет финиш.</li>
+          <li>Порядок не зависит от CC/s — от него зависит только время.</li>
+        </ul>
+      </details>
+    </aside>
+
+    <section class="results" aria-live="polite">
+      <article class="card problems" id="problems" hidden>
+        <h2>Проверь ввод</h2>
+        <ul id="problem-list"></ul>
+      </article>
+
+      <div class="results" id="output">
+        <article class="card" id="next-card">
+          <h2>Следующая покупка</h2>
+          <div id="next-body"></div>
+        </article>
+
+        <article class="card">
+          <h2>Итог до конца борда</h2>
+          <div id="summary-body"></div>
+        </article>
+
+        <article class="card">
+          <h2 id="path-title">Полный путь</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="num">#</th>
+                  <th>Улучшение</th>
+                  <th>Уровень</th>
+                  <th class="num">Цена</th>
+                  <th class="num">Множ.</th>
+                  <th class="num">Ждать</th>
+                  <th class="num">С начала</th>
+                  <th class="num">CC/s после</th>
+                </tr>
+              </thead>
+              <tbody id="path-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+
+      <article class="card">
+        <h2>Калькулятор фарма</h2>
+        <label class="row farm-row"><span>Нужно Candy Corn (всего, с текущими)</span><input type="text" data-field="farmTarget" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="например 2T"></label>
+        <p class="farm-result" id="farm-result"></p>
+      </article>
+    </section>
+  </main>
+
+  <footer class="footer">Не связан с разработчиками игры. Считает по формулам из патчноута Halloween Part 3.</footer>
+
+  <script src="calc.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
