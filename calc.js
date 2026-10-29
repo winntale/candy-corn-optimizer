@@ -212,6 +212,13 @@
     return start;
   }
 
+  // Price of the next level at `level`, starting from the level-1 price (inverse of the above).
+  function generatorPriceAt(p, startPrice, level) {
+    var price = startPrice;
+    for (var l = 1; l < level; l++) price *= generatorGrowth(p, l);
+    return price;
+  }
+
   /*
    * Candy Corn collected this run as far as the calculator can see: everything paid for the current
    * board and generator levels (prices recovered back to level 1) plus what is on hand.
@@ -422,6 +429,7 @@
       waitByKind: waitByKind,
       startLevels: p.generators.map(function (g) { return g.level; }),
       finalLevels: gens.map(function (g) { return g.level; }),
+      bankLeft: bank,
       referenceLevel: gens[top].level
     };
   }
@@ -644,10 +652,14 @@
     return result;
   }
 
-  // k in Spiders ∝ CC^k from two readings of "+X Spiders" at different Candy Corn; NaN when unusable.
-  function fitExponent(cc1, sp1, cc2, sp2) {
-    if (!(cc1 > 0 && sp1 > 0 && cc2 > 0 && sp2 > 0) || cc1 === cc2) return NaN;
-    return Math.log(sp2 / sp1) / Math.log(cc2 / cc1);
+  /*
+   * Spiders for a reset: ⌊ multiplier × (Candy Corn collected this run / 1M)^exponent ⌋.
+   * Fitted to in-game readings: exponent 0.449, multiplier = Spiders Boost (×1.2 per level);
+   * e.g. 236.8M with ×1.2 → 13, 246.8M → 14, 140.1M → 11. First Spider at 1M.
+   */
+  function spidersForRun(collected, multiplier, exponent) {
+    if (!(collected >= 1e6)) return 0;
+    return Math.floor(multiplier * Math.pow(collected / 1e6, exponent) + 1e-9);
   }
 
   var api = {
@@ -658,13 +670,14 @@
     fastestOrder: fastestOrder,
     generatorGrowth: generatorGrowth,
     generatorStartPrice: generatorStartPrice,
+    generatorPriceAt: generatorPriceAt,
     candyRunTotal: candyRunTotal,
     optimizeCandy: optimizeCandy,
     simulateCandy: simulateCandy,
     optimizeSpiders: optimizeSpiders,
     simulateSpiders: simulateSpiders,
     spiderFactor: spiderFactor,
-    fitExponent: fitExponent
+    spidersForRun: spidersForRun
   };
 
   if (typeof module === 'object' && module.exports) module.exports = api;

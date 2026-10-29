@@ -174,7 +174,6 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .spider-grid { grid-template-columns: minmax(0, 1fr) 40px 76px 52px; }
 .unlock-grid { grid-template-columns: minmax(0, 1fr) 52px 76px 52px; }
 .unlock-grid input[type="checkbox"] { justify-self: center; }
-.fit-grid { grid-template-columns: minmax(0, 1fr) 96px 80px; }
 .spider-advanced-grid { grid-template-columns: minmax(0, 1fr) 80px 52px; }
 
 .grid input[type="text"] { width: 100%; }
@@ -208,6 +207,15 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 }
 
 .hint-list li + li { margin-top: 3px; }
+
+.formula-box {
+  margin: 10px 0 6px;
+  padding: 8px 10px;
+  background: var(--panel-raised);
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
 
 .fit-actions {
   display: flex;

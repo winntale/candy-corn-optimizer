@@ -48,11 +48,7 @@
     spBank: '0',
     spPerReset: '10',
     spRunMinutes: '15',
-    spExp: '0.5',
-    spCc1: '1M',
-    spSp1: '1',
-    spCc2: '',
-    spSp2: '',
+    spExp: '0.449',
     ccbLevel: '0',
     ccbPrice: '1',
     ccbGrowth: SPIDER_GROWTH_PLACEHOLDER,
@@ -80,7 +76,7 @@
 
   // Fields that may stay empty without being marked red.
   var OPTIONAL = {
-    farmTarget: true, spGenLevel: true, spCc1: true, spSp1: true, spCc2: true, spSp2: true,
+    farmTarget: true, spGenLevel: true,
     gen2Price: true, gen2Cps: true, gen3Price: true, gen3Cps: true,
     gen4Price: true, gen4Cps: true, gen5Price: true, gen5Cps: true
   };
@@ -133,15 +129,15 @@
     candyTotal: document.getElementById('candy-total-rate'),
     spiderRate: document.getElementById('spider-rate'),
     farm: document.getElementById('farm-result'),
-    fitResult: document.getElementById('fit-result'),
-    applyFit: document.getElementById('apply-fit'),
     runTotal: document.getElementById('run-total'),
+    spiderMult: document.getElementById('spider-mult'),
+    formulaSpiders: document.getElementById('formula-spiders'),
     prestige: document.getElementById('prestige'),
     transfer: document.getElementById('transfer'),
     transferStatus: document.getElementById('transfer-status')
   };
 
-  var state = { activeTab: DEFAULTS.activeTab, candyResult: null, spiderResult: null, fit: NaN, runTotal: NaN };
+  var state = { activeTab: DEFAULTS.activeTab, candyResult: null, spiderResult: null, formulaSpiders: NaN, lastRaw: null };
 
   // ---------- state ----------
 
@@ -165,13 +161,16 @@
     fields[key].value = value;
   }
 
-  // v1 had one generator (genLevel/genPrice) and a separate total CC/s field (rate).
+  // v1 had one generator (genLevel/genPrice) and a separate total CC/s field (rate);
+  // before v2.2 the Spider exponent defaulted to a guess of 0.5 (now fitted: 0.449).
   function migrate(obj) {
-    if (obj.gen1Level !== undefined || obj.genLevel === undefined) return obj;
     var copy = Object.assign({}, obj);
-    copy.gen1Level = obj.genLevel;
-    copy.gen1Price = obj.genPrice;
-    copy.gen1Cps = obj.rate;
+    if (obj.gen1Level === undefined && obj.genLevel !== undefined) {
+      copy.gen1Level = obj.genLevel;
+      copy.gen1Price = obj.genPrice;
+      copy.gen1Cps = obj.rate;
+    }
+    if (obj.spExp === '0.5') copy.spExp = DEFAULTS.spExp;
     return copy;
   }
 
@@ -408,6 +407,22 @@
 
   // ---------- Candy Corn tab ----------
 
+  function spiderMultiplier(raw) {
+    return Math.pow(num(raw, 'sbMult'), num(raw, 'sbLevel'));
+  }
+
+  // Spiders by the formula if you reset now and after the last board purchase of the plan.
+  function spidersText(p, result, raw) {
+    var collected = calc.candyRunTotal(p);
+    var atEnd = collected - p.bank + result.totalCost + result.bankLeft;
+    var mult = spiderMultiplier(raw);
+    var k = num(raw, 'spExp');
+    var now = calc.spidersForRun(collected, mult, k);
+    var end = calc.spidersForRun(atEnd, mult, k);
+    if (!(now >= 0) || !(end >= 0)) return '—';
+    return '+' + now + (end !== now ? ' <span class="muted">→ +' + end + ' в конце</span>' : '');
+  }
+
   function renderCandy(result, p, raw) {
     var production = candyProduction(p);
     ui.candyTotal.textContent = production > 0 ? fmt(production) + '/с' : '—';
@@ -448,6 +463,7 @@
         fact('Покупок', String(result.steps.length)) +
         fact('CC/s в конце', fmt(result.finalRate) + ' <span class="muted">' + fmtMult(result.finalRate / result.startRate) + '</span>') +
         fact('Потрачено всего', fmt(result.totalCost)) +
+        fact('Spiders за ресет', spidersText(p, result, raw)) +
       '</dl>' +
       '<p class="gen-levels">' + generators + '</p>' +
       (result.steps.length ? timeBar(result.totalTime, timeParts) + timeLegend(timeParts) : '') +
@@ -485,30 +501,52 @@
       : 'Фармить <strong>' + dur(need / rate) + '</strong> · нужно ещё ' + fmt(need) + ' при ' + fmt(rate) + ' CC/s';
   }
 
+  // Multiplies one field ('Cps' or 'Price') of every generator that has a value.
+  function scaleGenerators(p, suffix, factor) {
+    GEN_NUMBERS.forEach(function (n) {
+      var value = suffix === 'Cps' ? p.generators[n - 1].cps : p.generators[n - 1].price;
+      if (value > 0) setField('gen' + n + suffix, fmt(value * factor, 4));
+    });
+  }
+
+  /*
+   * Moves an upgrade (field prefix: boost, speed, gen1..gen5, ccb, sb, gc) from level `from` to `to`,
+   * starting from the values in `base`, and keeps what depends on the level in step:
+   * its next price; Gain/Speed/CC Boost — CC/s of every generator; Gen Cost — every generator price;
+   * a generator's own CC/s (proportional to level). A locked generator (level 0) keeps the values
+   * it has right after unlock (level 1).
+   */
+  function syncLevel(base, prefix, from, to) {
+    var p = candyParams(base);
+    var delta = to - from;
+    if (prefix === 'boost' || prefix === 'speed') {
+      var u = p[prefix];
+      if (u.price > 0) setField(prefix + 'Price', fmt(u.price * Math.pow(u.growth, delta), 4));
+      scaleGenerators(p, 'Cps', Math.pow(u.mult, delta));
+    } else if (prefix.indexOf('gen') === 0) {
+      var g = p.generators[Number(prefix.slice(3)) - 1];
+      var startPrice = from >= 1 ? calc.generatorStartPrice(p, from, g.price) : g.price;
+      var perLevel = from >= 1 ? g.cps / from : g.cps;
+      if (startPrice > 0) setField(prefix + 'Price', fmt(calc.generatorPriceAt(p, startPrice, Math.max(to, 1)), 4));
+      if (perLevel > 0) setField(prefix + 'Cps', fmt(perLevel * Math.max(to, 1), 4));
+    } else {
+      var s = leveled(base, prefix);
+      if (s.price > 0) setField(prefix + 'Price', fmt(s.price * Math.pow(s.growth, delta), 4));
+      if (prefix === 'ccb') scaleGenerators(p, 'Cps', Math.pow(s.mult, delta));
+      if (prefix === 'gc') scaleGenerators(p, 'Price', Math.pow(s.mult, -delta));
+    }
+  }
+
   // "Купил": moves the inputs to the state right after the recommended Candy Corn purchase.
   function buyCandy() {
     var result = state.candyResult;
     if (!result || !result.steps || !result.steps.length) return;
     var step = result.steps[0];
-    var p = candyParams(readRaw());
-    if (step.kind === 'boost' || step.kind === 'speed') {
-      var u = p[step.kind];
-      setField(step.kind + 'Level', String(step.to));
-      setField(step.kind + 'Price', fmt(u.price * u.growth, 4));
-      GEN_NUMBERS.forEach(function (n) {
-        var cps = p.generators[n - 1].cps;
-        if (cps > 0) setField('gen' + n + 'Cps', fmt(cps * step.mult, 4));
-      });
-    } else {
-      var n = Number(step.id.slice(3));
-      var g = p.generators[n - 1];
-      setField('gen' + n + 'Level', String(step.to));
-      if (!step.unlock) {
-        setField('gen' + n + 'Price', fmt(g.price * calc.generatorGrowth(p, g.level), 4));
-        setField('gen' + n + 'Cps', fmt(g.cps * (g.level + 1) / g.level, 4));
-      }
-    }
-    setField('bank', fmt(Math.max(0, p.bank - step.cost), 4));
+    var raw = readRaw();
+    var prefix = step.kind === 'gen' ? step.id : step.kind;
+    syncLevel(raw, prefix, step.from, step.to);
+    setField(prefix + 'Level', String(step.to));
+    setField('bank', fmt(Math.max(0, num(raw, 'bank') - step.cost), 4));
     update();
   }
 
@@ -525,11 +563,12 @@
     return seconds > 0 ? '≈' + fmt(seconds / runSeconds) : '—';
   }
 
-  function renderFit(raw) {
-    state.fit = calc.fitExponent(num(raw, 'spCc1'), num(raw, 'spSp1'), num(raw, 'spCc2'), num(raw, 'spSp2'));
-    var usable = state.fit >= 0;
-    ui.fitResult.textContent = usable ? 'По замерам k ≈ ' + state.fit.toFixed(3) : 'Заполни оба замера (CC разные).';
-    ui.applyFit.disabled = !usable;
+  function renderFormula(collected, raw) {
+    var mult = spiderMultiplier(raw);
+    state.formulaSpiders = calc.spidersForRun(collected, mult, num(raw, 'spExp'));
+    ui.runTotal.textContent = collected >= 0 ? fmt(collected) + ' CC' : '—';
+    ui.spiderMult.textContent = mult > 0 ? fmtMult(mult) : '—';
+    ui.formulaSpiders.textContent = state.formulaSpiders >= 0 ? '+' + state.formulaSpiders + ' Spiders' : '—';
   }
 
   function renderSpiders(result, p, raw) {
@@ -602,21 +641,15 @@
     var result = state.spiderResult;
     if (!result || !result.steps || !result.steps.length) return;
     var step = result.steps[0];
-    var p = spiderParams(readRaw(), state.candyResult);
+    var raw = readRaw();
+    var p = spiderParams(raw, state.candyResult);
     var prefix = SPIDER_FIELD_PREFIX[step.id];
     if (prefix) {
+      syncLevel(raw, prefix, step.from, step.to);
       setField(prefix + 'Level', String(step.to));
-      setField(prefix + 'Price', fmt(p[step.id].price * p[step.id].growth, 4));
     } else {
       fields[step.id + 'Plan'].checked = false;
     }
-    // CC Boost speeds up every generator; Gen Cost makes every generator level cheaper.
-    var candy = candyParams(readRaw());
-    GEN_NUMBERS.forEach(function (n) {
-      var g = candy.generators[n - 1];
-      if (step.id === 'ccBoost' && g.cps > 0) setField('gen' + n + 'Cps', fmt(g.cps * step.effect, 4));
-      if (step.id === 'genCost' && g.price > 0) setField('gen' + n + 'Price', fmt(g.price / step.effect, 4));
-    });
     setField('spBank', fmt(Math.max(0, p.bank - step.cost), 4));
     setField('spPerReset', fmt(p.perReset * step.factor, 4));
     update();
@@ -636,6 +669,7 @@
 
   function update() {
     var raw = readRaw();
+    state.lastRaw = raw;
     markInvalid(raw);
     save(raw);
     var candy = candyParams(raw);
@@ -644,11 +678,9 @@
     renderFarm(raw, candy);
     var spiders = spiderParams(raw, state.candyResult);
     state.spiderResult = calc.optimizeSpiders(spiders);
-    state.runTotal = calc.candyRunTotal(candy);
-    ui.runTotal.textContent = state.runTotal >= 0 ? fmt(state.runTotal) + ' CC' : '—';
     var perReset = num(raw, 'spPerReset');
     ui.prestige.textContent = perReset > 0 ? '🕷 Ресет: +' + fmt(perReset) + ' Spiders' : '🕷 Ресет';
-    renderFit(raw);
+    renderFormula(calc.candyRunTotal(candy), raw);
     renderSpiders(state.spiderResult, spiders, raw);
   }
 
@@ -727,10 +759,30 @@
     setTransferStatus('Сброшено к значениям по умолчанию.');
   }
 
+  /*
+   * Manual level edits: dependents are recomputed from the values the page had before the first
+   * keystroke in that field, so typing "42" digit by digit does not pile up rounding.
+   * Any other edit or button press starts a fresh base.
+   */
+  var LEVEL_FIELD = /^(boost|speed|gen[1-5]|ccb|sb|gc)Level$/;
+  var levelEdit = null;
   document.addEventListener('input', function (event) {
-    if (event.target.dataset && event.target.dataset.field) update();
+    var key = event.target.dataset && event.target.dataset.field;
+    if (!key) return;
+    if (LEVEL_FIELD.test(key)) {
+      if (!levelEdit || levelEdit.key !== key) levelEdit = { key: key, base: state.lastRaw };
+      var from = num(levelEdit.base, key);
+      var to = calc.parseAmount(event.target.value);
+      if (Number.isInteger(from) && from >= 0 && Number.isInteger(to) && to >= 0) {
+        syncLevel(levelEdit.base, key.slice(0, -'Level'.length), from, to);
+      }
+    } else {
+      levelEdit = null;
+    }
+    update();
   });
   document.addEventListener('click', function (event) {
+    if (event.target.closest('button')) levelEdit = null;
     var target = event.target.closest('[data-action], [data-tab]');
     if (!target) return;
     if (target.dataset.tab) {
@@ -743,15 +795,9 @@
     }
   });
   ui.prestige.addEventListener('click', prestige);
-  document.getElementById('take-run').addEventListener('click', function () {
-    if (!(state.runTotal > 0)) return;
-    setField('spCc2', fmt(state.runTotal, 4));
-    setField('spSp2', String(readRaw().spPerReset));
-    update();
-  });
-  ui.applyFit.addEventListener('click', function () {
-    if (!(state.fit >= 0)) return;
-    setField('spExp', String(parseFloat(state.fit.toFixed(3))));
+  document.getElementById('use-formula').addEventListener('click', function () {
+    if (!(state.formulaSpiders >= 0)) return;
+    setField('spPerReset', String(state.formulaSpiders));
     update();
   });
   document.getElementById('export').addEventListener('click', exportState);

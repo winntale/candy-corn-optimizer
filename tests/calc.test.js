@@ -145,6 +145,8 @@ test('generatorStartPrice_ShouldRecoverLevelOnePrice_WhenGivenGamePrices', () =>
   const p = candyParams();
   assert.equal(Math.round(calc.generatorStartPrice(p, 40, 1.17e6)), 10);
   assert.equal(Math.round(calc.generatorStartPrice(p, 31, 9.663e6)), 2000);
+  assert.equal(calc.formatAmount(calc.generatorPriceAt(p, 10, 40)), '1.17M');
+  assert.equal(calc.formatAmount(calc.generatorPriceAt(p, 2000, 28)), '3.56M');
 });
 
 test('candyRunTotal_ShouldSumEverythingPaid_WhenLevelsAreKnown', () => {
@@ -298,8 +300,10 @@ test('optimizeSpiders_ShouldReportProblems_WhenInputIsInvalid', () => {
   assert.equal(result.problems.length, 2);
 });
 
-test('fitExponent_ShouldRecoverPower_WhenTwoReadingsGiven', () => {
-  assertClose(calc.fitExponent(1e6, 10, 1e8, 100), 0.5, 'k');
-  assert.ok(Number.isNaN(calc.fitExponent(1e6, 10, 1e6, 20)));
-  assert.ok(Number.isNaN(calc.fitExponent(0, 10, 1e6, 20)));
+test('spidersForRun_ShouldMatchGameReadings_WhenSpidersBoostIsBought', () => {
+  assert.equal(calc.spidersForRun(236.81e6, 1.2, 0.449), 13);
+  assert.equal(calc.spidersForRun(246.81e6, 1.2, 0.449), 14);
+  assert.equal(calc.spidersForRun(140.13e6, 1.2, 0.449), 11);
+  assert.equal(calc.spidersForRun(1e6, 1, 0.449), 1);
+  assert.equal(calc.spidersForRun(0.99e6, 1, 0.449), 0);
 });
