@@ -6,11 +6,11 @@
   <title>Candy Corn Board Optimizer</title>
   <meta name="description" content="Оптимальный порядок покупок Candy Corn и Spider бордов (Halloween Part 3): Candy Corn Gain, Generator Speed, 5 генераторов, CC Boost, Spiders Boost, Gen Cost.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎃</text></svg>">
-  <link rel="stylesheet" href="style.css?v=2.4.1">
+  <link rel="stylesheet" href="style.css?v=2.5">
 </head>
 <body>
   <header class="top">
-    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.4.1</span></h1>
+    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.5</span></h1>
     <p class="subtitle">Halloween Part 3 · самый быстрый порядок покупок до конца борда</p>
     <div class="toolbar">
       <nav class="tabs" role="tablist" aria-label="Борд">
@@ -40,8 +40,9 @@
         <details class="section" open>
           <summary>Сейчас в игре</summary>
           <label class="row"><span>Candy Corn</span><input type="text" data-field="bank" inputmode="decimal" autocomplete="off" spellcheck="false"></label>
+          <label class="row"><span>Въёбано на курсы frontend разработчика</span><input type="text" data-field="curseSpent" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="0"></label>
           <p class="row total"><span>CC/s всего</span><strong id="candy-total-rate">—</strong></p>
-          <p class="hint">Числа как в игре: 25B, 1.5Qa, 2e12. CC/s — сумма генераторов ниже.</p>
+          <p class="hint">Числа как в игре: 25B, 1.5Qa, 2e12. CC/s — сумма генераторов ниже. «Курсы» — CC, потраченные за забег на проклятия и прочее вне калькулятора: идут в «собрано за забег» для формулы Spiders, при ресете обнуляются.</p>
         </details>
 
         <details class="section" open>
@@ -231,7 +232,7 @@
           <p class="row total"><span>Собрано за этот забег</span><strong id="run-total">—</strong></p>
           <p class="row total"><span>×Spiders (Spiders Boost)</span><strong id="spider-mult">—</strong></p>
           <p class="row total"><span>Сейчас по формуле</span><strong id="formula-spiders">—</strong></p>
-          <p class="hint">CC — собранные за забег, ×Sp — Spiders Boost. k = 0.449 выведено по замерам из игры. «Собрано» — по уровням и ценам вкладки Candy Corn плюс CC на руках; проклятия и другие покупки не видны, поэтому в игре может выйти чуть больше.</p>
+          <p class="hint">CC — собранные за забег, ×Sp — Spiders Boost. k = 0.449 выведено по замерам из игры. «Собрано» — по уровням и ценам вкладки Candy Corn плюс CC на руках; проклятия и прочее впиши в поле «Въёбано на курсы frontend разработчика» на вкладке Candy Corn.</p>
         </details>
 
         <details class="section">
@@ -304,7 +305,7 @@
 
   <footer class="footer">Не связан с разработчиками игры. Считает по формулам из патчноута Halloween Part 3 и ценам из игры.</footer>
 
-  <script src="calc.js?v=2.4.1"></script>
-  <script src="app.js?v=2.4.1"></script>
+  <script src="calc.js?v=2.5"></script>
+  <script src="app.js?v=2.5"></script>
 </body>
 </html>

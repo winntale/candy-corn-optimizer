@@ -13,6 +13,7 @@
     activeTab: 'candy',
     // Candy Corn
     bank: '0',
+    curseSpent: '0',
     boostLevel: '0',
     boostPrice: '50',
     speedLevel: '0',
@@ -75,7 +76,7 @@
 
   // Fields that may stay empty without being marked red.
   var OPTIONAL = {
-    farmTarget: true, spGenLevel: true,
+    farmTarget: true, spGenLevel: true, curseSpent: true,
     gen2Price: true, gen2Cps: true, gen3Price: true, gen3Cps: true,
     gen4Price: true, gen4Cps: true, gen5Price: true, gen5Cps: true
   };
@@ -138,7 +139,10 @@
     transferStatus: document.getElementById('transfer-status')
   };
 
-  var state = { activeTab: DEFAULTS.activeTab, candyResult: null, spiderResult: null, formulaSpiders: NaN, lastRaw: null, advice: null };
+  var state = {
+    activeTab: DEFAULTS.activeTab, candyResult: null, candySteps: [], spiderResult: null,
+    formulaSpiders: NaN, lastRaw: null, advice: null
+  };
 
   // ---------- state ----------
 
@@ -233,6 +237,7 @@
   function candyParams(raw) {
     return {
       bank: num(raw, 'bank'),
+      curseSpent: num(raw, 'curseSpent'),
       genGrowthBase: num(raw, 'genGrowthBase'),
       genGrowthStep: num(raw, 'genGrowthStep'),
       boost: leveled(raw, 'boost'),
@@ -364,12 +369,13 @@
     return '<ul class="' + className + '">' + messages.map(function (m) { return '<li>' + m + '</li>'; }).join('') + '</ul>';
   }
 
-  // Merges consecutive purchases of the same upgrade into one row when `merge` is on.
-  function tableRows(steps, merge) {
+  // Merges consecutive purchases of the same upgrade (within one segment) into one row when `merge` is on.
+  function tableRows(steps, merge, segmentOf) {
     var rows = [];
     steps.forEach(function (s, index) {
       var last = rows[rows.length - 1];
-      if (merge && last && last.id === s.id) {
+      var segment = segmentOf ? segmentOf(s) : 0;
+      if (merge && last && last.id === s.id && last.segment === segment) {
         last.lastIndex = index + 1;
         last.count += 1;
         last.to = s.to;
@@ -383,27 +389,61 @@
       }
       rows.push({
         id: s.id, firstIndex: index + 1, lastIndex: index + 1, count: 1, from: s.from, to: s.to,
-        unlock: Boolean(s.unlock), cost: s.cost, wait: s.wait, elapsed: s.elapsed,
-        mult: s.mult || 1, factor: s.factor || 1, rateAfter: s.rateAfter
+        unlock: Boolean(s.unlock), cost: s.cost, wait: s.wait, elapsed: s.elapsed, firstElapsed: s.elapsed,
+        mult: s.mult || 1, factor: s.factor || 1, rateAfter: s.rateAfter, afterBoard: Boolean(s.afterBoard),
+        segment: segment
       });
     });
     return rows;
   }
 
-  function renderPath(parts, steps, merge, cells) {
+  function dividerRow(className, html) {
+    return '<tr class="divider ' + className + '"><td colspan="8">' + html + '</td></tr>';
+  }
+
+  /*
+   * `decor` (optional): { markers: [{ time, html }] — rows inserted before the first purchase made
+   * after `time` (sorted by time); fadeAfter — purchases after this time are drawn faded;
+   * boardEnd — time of the last board purchase, before the "board closed" divider }.
+   */
+  function renderPath(parts, steps, merge, cells, decor) {
     var n = steps.length;
     parts.pathTitle.textContent = 'Полный путь (' + n + ' ' + plural(n, ['шаг', 'шага', 'шагов']) + ')';
+    var markers = decor ? decor.markers : [];
     if (!n) {
-      parts.path.innerHTML = '<tr><td colspan="8" class="muted">Покупать больше нечего.</td></tr>';
+      parts.path.innerHTML = markers.map(function (m) { return dividerRow('reset', m.html); }).join('') ||
+        '<tr><td colspan="8" class="muted">Покупать больше нечего.</td></tr>';
       return;
     }
-    parts.path.innerHTML = tableRows(steps, merge).map(function (r) {
+    var placed = 0;
+    function markersBefore(time) {
+      var html = '';
+      while (placed < markers.length && markers[placed].time < time) {
+        html += dividerRow('reset', markers[placed].html);
+        placed += 1;
+      }
+      return html;
+    }
+    function segmentOf(step) {
+      var passed = markers.filter(function (m) { return step.elapsed > m.time; }).length;
+      return passed * 2 + (step.afterBoard ? 1 : 0);
+    }
+    var rows = tableRows(steps, merge, decor ? segmentOf : null);
+    parts.path.innerHTML = rows.map(function (r, i) {
+      var before = '';
+      if (r.afterBoard && !(rows[i - 1] && rows[i - 1].afterBoard)) {
+        before += markersBefore(decor.boardEnd) + dividerRow('board', 'Борд закрыт · дальше генераторы');
+      }
+      before += markersBefore(r.firstElapsed);
+      var classes = [];
+      if (r.firstIndex === 1) classes.push('current');
+      if (decor && r.firstElapsed > decor.fadeAfter) classes.push('after-reset');
       var index = r.count > 1 ? r.firstIndex + '–' + r.lastIndex : String(r.firstIndex);
-      return '<tr' + (r.firstIndex === 1 ? ' class="current"' : '') + '>' +
+      return before + '<tr' + (classes.length ? ' class="' + classes.join(' ') + '"' : '') + '>' +
         '<td class="num muted">' + index + '</td>' +
         cells(r).map(function (cell) { return '<td' + (cell.num ? ' class="num"' : '') + '>' + cell.html + '</td>'; }).join('') +
         '</tr>';
-    }).join('');
+    }).join('') + markersBefore(Infinity);
   }
 
   // ---------- Candy Corn tab ----------
@@ -450,24 +490,55 @@
     return '+' + now + (end !== now ? ' <span class="muted">→ +' + end + ' в конце</span>' : '');
   }
 
+  // Board plan followed by the generators to buy after it (from the reset advice), flagged afterBoard.
+  function candySteps(p, result, advice) {
+    if (result.problems.length) return [];
+    if (!advice || !advice.afterBoard.length) return result.steps;
+    var order = result.steps.map(function (s) { return s.id; }).concat(advice.afterBoard);
+    return calc.simulateCandy(p, order).steps.map(function (s, i) {
+      s.afterBoard = i >= result.steps.length;
+      return s;
+    });
+  }
+
+  // Reset rows for the path table and which purchases come after the recommended reset.
+  function candyDecor(result, steps, advice) {
+    if (!advice) return null;
+    var boardEnd = result.steps.length ? result.steps[result.steps.length - 1].elapsed : -1;
+    var markers = [];
+    if (advice.resetNow) {
+      markers.push({ time: -1, html: '🕷 Пора ресет: +' + advice.spidersNow + ' Spiders' });
+    } else if (advice.target) {
+      markers.push({ time: advice.target.time, html: '🕷 Лучший момент для ресета: +' + advice.target.spiders + ' Spiders' });
+    }
+    var finish = advice.finishTarget;
+    if (finish && finish !== advice.target && result.steps.length) {
+      markers.push({ time: finish.time, html: '🕷 Если сначала закрыть борд — ресет при +' + finish.spiders + ' Spiders' });
+    }
+    markers.sort(function (a, b) { return a.time - b.time; });
+    return { markers: markers, fadeAfter: markers.length ? markers[0].time : Infinity, boardEnd: boardEnd };
+  }
+
   function renderCandy(result, p, raw) {
     var production = candyProduction(p);
     ui.candyTotal.textContent = production > 0 ? fmt(production) + '/с' : '—';
     var parts = ui.candy;
     if (showProblems(parts, result.problems)) return;
+    var steps = state.candySteps;
 
-    if (!result.steps.length) {
-      parts.next.innerHTML = '<p class="done">🎉 Борд закрыт: Candy Corn Gain и Generator Speed на максимуме.</p>';
+    if (!steps.length) {
+      parts.next.innerHTML = '<p class="done">🎉 Борд закрыт: Candy Corn Gain и Generator Speed на максимуме. Дальше — ресет.</p>';
     } else {
-      var s = result.steps[0];
-      parts.next.innerHTML = nextHeader(CANDY_VIEW, s) +
+      var s = steps[0];
+      parts.next.innerHTML = (s.afterBoard ? '<p class="muted next-note">Борд закрыт — дальше генераторы.</p>' : '') +
+        nextHeader(CANDY_VIEW, s) +
         '<dl class="facts">' +
           fact('Цена', fmt(s.cost)) +
           fact('Ждать', waitText(s.wait)) +
           fact('Множитель CC/s', fmtMult(s.mult)) +
           fact('CC/s после', fmt(s.rateAfter)) +
         '</dl>' +
-        nextActions(CANDY_VIEW, result.steps, 'buy-candy');
+        nextActions(CANDY_VIEW, steps, 'buy-candy');
     }
 
     var counts = { boost: 0, speed: 0, gen: 0 };
@@ -491,13 +562,16 @@
         fact('CC/s в конце', fmt(result.finalRate) + ' <span class="muted">' + fmtMult(result.finalRate / result.startRate) + '</span>') +
         fact('Потрачено всего', fmt(result.totalCost)) +
         fact('Spiders за ресет', spidersText(p, result, raw)) +
+        (steps.length > result.steps.length
+          ? fact('После борда', '+' + (steps.length - result.steps.length) + ' покуп. генераторов в плане')
+          : '') +
       '</dl>' +
       '<p class="gen-levels">' + generators + '</p>' +
       (result.steps.length ? timeBar(result.totalTime, timeParts) + timeLegend(timeParts) : '') +
       messageList('info-list', result.notes) +
       messageList('warning-list', warnings);
 
-    renderPath(parts, result.steps, raw.group, function (r) {
+    renderPath(parts, steps, raw.group, function (r) {
       return [
         { html: tag(CANDY_VIEW, r.id, true) },
         { html: levelsText(r) },
@@ -507,7 +581,7 @@
         { html: dur(r.elapsed), num: true },
         { html: fmt(r.rateAfter), num: true }
       ];
-    });
+    }, candyDecor(result, steps, state.advice));
   }
 
   function renderFarm(raw, p) {
@@ -566,9 +640,9 @@
 
   // "Купил": moves the inputs to the state right after the recommended Candy Corn purchase.
   function buyCandy() {
-    var result = state.candyResult;
-    if (!result || !result.steps || !result.steps.length) return;
-    var step = result.steps[0];
+    var steps = state.candySteps;
+    if (!steps || !steps.length) return;
+    var step = steps[0];
     var raw = readRaw();
     var prefix = step.kind === 'gen' ? step.id : step.kind;
     syncLevel(raw, prefix, step.from, step.to);
@@ -701,11 +775,12 @@
     save(raw);
     var candy = candyParams(raw);
     state.candyResult = calc.optimizeCandy(candy);
+    state.advice = calc.resetAdvice(candy, state.candyResult, spiderMultiplier(raw), num(raw, 'spExp'));
+    state.candySteps = candySteps(candy, state.candyResult, state.advice);
     renderCandy(state.candyResult, candy, raw);
     renderFarm(raw, candy);
     var spiders = spiderParams(raw, state.candyResult);
     state.spiderResult = calc.optimizeSpiders(spiders);
-    state.advice = calc.resetAdvice(candy, state.candyResult, spiderMultiplier(raw), num(raw, 'spExp'));
     renderReset(state.advice);
     var gain = currentSpiders(raw);
     var ready = Boolean(state.advice && state.advice.resetNow);
@@ -741,6 +816,7 @@
       if (after.cps > 0) setField('gen' + n + 'Cps', fmt(after.cps, 4));
     });
     setField('bank', '0');
+    setField('curseSpent', '0');
     if (gain > 0) setField('spBank', fmt(num(raw, 'spBank') + gain, 4));
     update();
     setTransferStatus('');

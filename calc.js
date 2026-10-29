@@ -221,11 +221,11 @@
 
   /*
    * Candy Corn collected this run as far as the calculator can see: everything paid for the current
-   * board and generator levels (prices recovered back to level 1) plus what is on hand.
-   * Purchases outside the calculator (curses, other board upgrades) are not included.
+   * board and generator levels (prices recovered back to level 1), plus what is on hand, plus what
+   * was spent outside the calculator this run (curses and the like, typed in by hand).
    */
   function candyRunTotal(p) {
-    var total = p.bank;
+    var total = p.bank + (p.curseSpent > 0 ? p.curseSpent : 0);
     [p.boost, p.speed].forEach(function (u) {
       if (!(u.level > 0)) return;
       var base = u.price / Math.pow(u.growth, u.level);
@@ -666,6 +666,8 @@
 
   // Generator purchases simulated after the board is maxed (more than enough to pass the best reset).
   var EXTRA_GENERATOR_STEPS = 600;
+  // Generator purchases shown after the board at least, even when resetting right after it is better.
+  var MIN_AFTER_BOARD = 25;
 
   function resetBoardUpgrade(u) {
     return Object.assign({}, u, { level: 0, price: u.level > 0 ? u.price / Math.pow(u.growth, u.level) : u.price });
@@ -680,6 +682,7 @@
     var boardFactor = Math.pow(p.boost.mult, p.boost.level) * Math.pow(p.speed.mult, p.speed.level);
     return Object.assign({}, p, {
       bank: 0,
+      curseSpent: 0,
       boost: resetBoardUpgrade(p.boost),
       speed: resetBoardUpgrade(p.speed),
       generators: p.generators.map(function (g) {
@@ -697,16 +700,18 @@
    * Production over time if the run follows `order` and then keeps buying generators (the block with
    * the smallest key, each as soon as affordable). Spending never lowers the Candy Corn collected,
    * so buying as early as possible is what brings Spiders soonest.
-   * Returns rate changes [{ time, rate }]; each rate holds until the next entry (the last one forever).
+   * Returns { events, tail }: rate changes [{ time, rate }] (each holds until the next entry, the last
+   * one forever; events[i + 1] follows the i-th purchase) and the generator ids bought after `order`.
    */
   function candyTimeline(p, order, extraSteps) {
-    var gens = p.generators.map(function (g) {
+    var gens = p.generators.map(function (g, index) {
       var open = g.level >= 1;
       return {
-        usable: open || isPlannedUnlock(g), locked: !open, level: g.level,
+        id: 'gen' + (index + 1), usable: open || isPlannedUnlock(g), locked: !open, level: g.level,
         gain: open ? g.cps / g.level : g.cps, price: g.price, unlockCost: g.unlockCost
       };
     });
+    var tail = [];
     var production = startProduction(p);
     var boostBought = 0;
     var speedBought = 0;
@@ -750,9 +755,10 @@
       }
       if (!pick) break;
       buyGenerator(pick.gen);
+      tail.push(pick.gen.id);
       record();
     }
-    return events;
+    return { events: events, tail: tail };
   }
 
   /*
@@ -790,30 +796,52 @@
     var fresh = resetCandyParams(p);
     var freshPlan = optimizeCandy(fresh);
     if (freshPlan.problems.length) return null;
-    var freshSteps = spiderMilestones(candyTimeline(fresh, freshPlan.steps.map(stepId), EXTRA_GENERATOR_STEPS), 0, 0, multiplier, exponent);
+    var freshLine = candyTimeline(fresh, freshPlan.steps.map(stepId), EXTRA_GENERATOR_STEPS);
     var bestRun = null;
-    freshSteps.forEach(function (m) { if (!bestRun || m.spiders / m.time > bestRun.rate) bestRun = { spiders: m.spiders, time: m.time, collected: m.collected, rate: m.spiders / m.time }; });
+    spiderMilestones(freshLine.events, 0, 0, multiplier, exponent).forEach(function (m) {
+      if (!bestRun || m.spiders / m.time > bestRun.rate) {
+        bestRun = { spiders: m.spiders, time: m.time, collected: m.collected, rate: m.spiders / m.time };
+      }
+    });
     if (!bestRun) return null;
 
     var collectedNow = candyRunTotal(p);
     var spidersNow = spidersForRun(collectedNow, multiplier, exponent);
-    var ahead = spiderMilestones(candyTimeline(p, currentPlan.steps.map(stepId), EXTRA_GENERATOR_STEPS), collectedNow, spidersNow, multiplier, exponent);
-    var target = null;
-    var bestGain = 0;
-    ahead.forEach(function (m) {
-      var gain = (m.spiders - spidersNow) - bestRun.rate * m.time;
-      if (gain >= bestGain - 1e-9 * Math.max(1, m.spiders)) {
-        bestGain = gain;
-        target = m;
-      }
-    });
+    var board = currentPlan.steps.map(stepId);
+    var line = candyTimeline(p, board, EXTRA_GENERATOR_STEPS);
+    var ahead = spiderMilestones(line.events, collectedNow, spidersNow, multiplier, exponent);
+    var target = bestMilestone(ahead, spidersNow, bestRun.rate, 0);
+    // If the board is finished first anyway: the best reset after it (events[i + 1] follows purchase i).
+    var boardEnd = line.events[board.length].time;
+    var finishTarget = target && target.time >= boardEnd ? target :
+      bestMilestone(ahead.filter(function (m) { return m.time >= boardEnd; }), spidersNow, bestRun.rate, -Infinity);
+    var untilFinish = finishTarget ? line.tail.filter(function (id, j) {
+      return line.events[board.length + j + 1].time <= finishTarget.time;
+    }).length : 0;
+    var afterBoard = line.tail.slice(0, Math.max(untilFinish, MIN_AFTER_BOARD));
     return {
       spidersNow: spidersNow,
       collectedNow: collectedNow,
       bestRun: bestRun,
       target: target,
-      resetNow: !target && spidersNow > 0
+      resetNow: !target && spidersNow > 0,
+      finishTarget: finishTarget,
+      afterBoard: afterBoard
     };
+  }
+
+  // Milestone with the largest (Spiders gained − rate × time); null when none beats `floor`.
+  function bestMilestone(milestones, spidersNow, rate, floor) {
+    var best = null;
+    var bestGain = floor;
+    milestones.forEach(function (m) {
+      var gain = (m.spiders - spidersNow) - rate * m.time;
+      if (gain >= bestGain - 1e-9 * Math.max(1, m.spiders)) {
+        bestGain = gain;
+        best = m;
+      }
+    });
+    return best;
   }
 
   function stepId(step) {

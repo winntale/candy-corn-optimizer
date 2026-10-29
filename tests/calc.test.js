@@ -10,6 +10,7 @@ function generator(overrides) {
 function candyParams(o = {}) {
   return {
     bank: o.bank ?? 0,
+    curseSpent: o.curseSpent ?? 0,
     genGrowthBase: o.genGrowthBase ?? 1.25,
     genGrowthStep: o.genGrowthStep ?? 0.005,
     boost: { level: 0, max: 25, price: 1000, mult: 1.25, growth: 2, ...o.boost },
@@ -358,4 +359,31 @@ test('resetAdvice_ShouldSayResetNow_WhenRunIsFarPastBestPoint', () => {
   assert.ok(advice.spidersNow > advice.bestRun.spiders);
   assert.equal(advice.resetNow, true);
   assert.equal(advice.target, null);
+});
+
+test('candyRunTotal_ShouldAddCurseSpending_WhenItIsTypedIn', () => {
+  const base = calc.candyRunTotal(exportD());
+  assertClose(calc.candyRunTotal(exportD({ curseSpent: 5e6 })), base + 5e6, 'curses are collected Candy Corn');
+  assert.equal(calc.resetCandyParams(exportD({ curseSpent: 5e6 })).curseSpent, 0);
+});
+
+test('resetAdvice_ShouldListGeneratorsAfterBoard_WhenBoardIsFinished', () => {
+  const p = exportD({ boost: { level: 25, price: 1.678e9 }, speed: { level: 20, price: 1.82e10 } });
+  const plan = calc.optimizeCandy(p);
+  const advice = calc.resetAdvice(p, plan, 1.2, 0.449);
+  assert.equal(plan.steps.length, 0);
+  assert.ok(advice.afterBoard.length >= 25);
+  assert.ok(advice.afterBoard.every((id) => id === 'gen1' || id === 'gen2'));
+  const steps = calc.simulateCandy(p, advice.afterBoard).steps;
+  assert.ok(steps.every((s, i) => i === 0 || s.elapsed >= steps[i - 1].elapsed));
+});
+
+test('resetAdvice_ShouldGiveResetAfterBoard_WhenBestResetIsMidBoard', () => {
+  const p = exportD();
+  const plan = calc.optimizeCandy(p);
+  const advice = calc.resetAdvice(p, plan, 1.2, 0.449);
+  assert.ok(advice.target.time < plan.totalTime, 'best reset comes before the board is done');
+  assert.ok(advice.finishTarget.time >= plan.totalTime);
+  assert.ok(advice.finishTarget.spiders > advice.target.spiders);
+  assert.ok(advice.afterBoard.length >= 25);
 });
