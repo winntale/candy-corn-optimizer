@@ -793,8 +793,8 @@
   /*
    * "Ресет": back to the start of a run. Board levels to 0 and prices to the first ones (rounded to
    * 3 digits, since the game shows rounded prices and the first ones are round); generators to
-   * level 1 with level-1 prices and production without Gain/Speed; Gen 2–3 (bought with Candy Corn)
-   * lock again; Candy Corn on hand to 0; Spiders by the formula (or "+Spiders за ресет") are added.
+   * level 1 with level-1 prices and production without Gain/Speed (unlocked Gen 2–3 stay open);
+   * Candy Corn on hand to 0; Spiders by the formula are added.
    */
   function prestige() {
     var raw = readRaw();

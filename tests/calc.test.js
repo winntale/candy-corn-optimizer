@@ -370,9 +370,18 @@ test('resetCandyParams_ShouldReturnFirstPrices_WhenRunIsReset', () => {
   assert.equal(calc.formatAmount(fresh.speed.price), '200');
   assert.equal(fresh.generators[0].level, 1);
   assert.equal(Math.round(fresh.generators[0].price), 10);
-  assert.equal(fresh.generators[1].level, 0, 'Gen 2 is locked again');
+  assert.equal(fresh.generators[1].level, 1, 'Gen 2 stays open');
   assert.equal(calc.formatAmount(fresh.generators[1].price), '2K');
+  assert.equal(fresh.generators[2].level, 0, 'Gen 3 stays locked');
   assert.equal(fresh.bank, 0);
+});
+
+test('resetCandyParams_ShouldKeepGen3Open_WhenItWasUnlocked', () => {
+  const fresh = calc.resetCandyParams(exportF(7e9));
+  const gen3 = fresh.generators[2];
+  assert.equal(gen3.level, 1);
+  assertClose(calc.generatorPriceAt(fresh, gen3.price, 20), 430.3e6, 'level-1 price grows back to the game price');
+  assert.equal(calc.candyRunTotal(fresh), 0, 'a fresh run has collected nothing');
 });
 
 test('spiderMilestones_ShouldFollowFormula_WhenRateIsConstant', () => {

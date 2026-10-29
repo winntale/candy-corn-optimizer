@@ -223,8 +223,9 @@
    * Candy Corn collected this run as far as the calculator can see: everything paid for the current
    * board and generator levels (prices recovered back to level 1), plus what is on hand, plus what
    * was spent outside the calculator this run (curses and the like, typed in by hand).
-   * Generator unlocks (Gen 2 100K, Gen 3 25B) do not count toward Spiders: with them the game's
-   * readings at 7B and 8B on hand (+130, +134) do not fit any exponent.
+   * Generator unlocks (Gen 2 100K, Gen 3 25B) are left out: they stay after a reset, so open
+   * generators were paid for in an earlier run (the game's +130 at 7B and +134 at 8B fit only
+   * without them). An unlock bought in this run goes into curseSpent; plans leave it out too.
    */
   function candyRunTotal(p) {
     var total = p.bank + (p.curseSpent > 0 ? p.curseSpent : 0);
@@ -678,9 +679,9 @@
   }
 
   /*
-   * The Candy Corn side right after a reset: board at level 0 with the first prices; generators at
-   * level 1 with level-1 prices and CC/s without Gain/Speed; Gen 2–3 (bought with Candy Corn) locked
-   * again with their after-unlock stats; nothing on hand. Spider upgrades and Gen 4–5 stay.
+   * The Candy Corn side right after a reset: board at level 0 with the first prices; open generators
+   * at level 1 with level-1 prices and CC/s without Gain/Speed (unlocks stay); locked ones stay locked
+   * with their after-unlock stats; nothing on hand. Spider upgrades and Gen 4–5 stay.
    */
   function resetCandyParams(p) {
     var boardFactor = Math.pow(p.boost.mult, p.boost.level) * Math.pow(p.speed.mult, p.speed.level);
@@ -692,7 +693,7 @@
       generators: p.generators.map(function (g) {
         if (!(g.level >= 1)) return Object.assign({}, g, { cps: g.cps / boardFactor });
         return Object.assign({}, g, {
-          level: g.candyUnlock ? 0 : 1,
+          level: 1,
           price: generatorStartPrice(p, g.level, g.price),
           cps: g.cps / g.level / boardFactor
         });
