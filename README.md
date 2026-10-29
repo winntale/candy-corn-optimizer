@@ -76,6 +76,9 @@
 2. **Settings → Pages → Source: Deploy from a branch**, ветка `main`, папка `/ (root)` → **Save**.
 3. Через 1–2 минуты сайт будет на `https://<логин>.github.io/<репозиторий>/`.
 
+При обновлении меняй номер версии в `index.html` (подпись и `?v=` у `style.css`, `calc.js`, `app.js`),
+иначе браузер может взять новую страницу со старыми скриптами из кэша GitHub Pages.
+
 ## Тесты
 
 ```bash
