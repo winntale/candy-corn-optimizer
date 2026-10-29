@@ -119,7 +119,8 @@
       next: role('next'),
       summary: role('summary'),
       pathTitle: role('path-title'),
-      path: role('path')
+      path: role('path'),
+      reset: role('reset')
     };
   }
 
@@ -137,7 +138,7 @@
     transferStatus: document.getElementById('transfer-status')
   };
 
-  var state = { activeTab: DEFAULTS.activeTab, candyResult: null, spiderResult: null, formulaSpiders: NaN, lastRaw: null };
+  var state = { activeTab: DEFAULTS.activeTab, candyResult: null, spiderResult: null, formulaSpiders: NaN, lastRaw: null, advice: null };
 
   // ---------- state ----------
 
@@ -411,16 +412,42 @@
     return Math.pow(num(raw, 'sbMult'), num(raw, 'sbLevel'));
   }
 
-  // Spiders by the formula if you reset now and after the last board purchase of the plan.
-  function spidersText(p, result, raw) {
-    var collected = calc.candyRunTotal(p);
-    var atEnd = collected - p.bank + result.totalCost + result.bankLeft;
-    var mult = spiderMultiplier(raw);
-    var k = num(raw, 'spExp');
-    var now = calc.spidersForRun(collected, mult, k);
-    var end = calc.spidersForRun(atEnd, mult, k);
-    if (!(now >= 0) || !(end >= 0)) return '—';
-    return '+' + now + (end !== now ? ' <span class="muted">→ +' + end + ' в конце</span>' : '');
+  function renderReset(advice) {
+    var box = ui.candy.reset;
+    if (!advice) {
+      box.innerHTML = '<p class="muted">Нужны корректные поля на вкладке Candy Corn и степень k на вкладке Spiders.</p>';
+      return;
+    }
+    var best = advice.bestRun;
+    var verdict;
+    if (advice.resetNow) {
+      verdict = '<p class="reset-verdict ready">🕷 Пора ресет: +' + advice.spidersNow + ' Spiders</p>' +
+        '<p class="muted">Дальше этот забег приносит Spiders медленнее, чем новый забег с нуля.</p>';
+    } else if (advice.target) {
+      verdict = '<p class="reset-verdict">Ресет при <strong>+' + advice.target.spiders + '</strong> Spiders — через <strong>' +
+        dur(advice.target.time) + '</strong></p>' +
+        '<p class="muted">Нужно собрать ' + fmt(advice.target.collected) + ' CC за забег (сейчас ' + fmt(advice.collectedNow) + ').</p>';
+    } else {
+      verdict = '<p class="reset-verdict">Пока рано: Spiders ещё нет.</p>';
+    }
+    box.innerHTML = verdict +
+      '<dl class="facts">' +
+        fact('Сейчас', '+' + advice.spidersNow + ' Spiders') +
+        fact('Лучший забег с нуля', '+' + best.spiders + ' за ' + dur(best.time)) +
+        fact('Темп', fmt(best.rate * 3600) + ' Spiders/ч') +
+      '</dl>' +
+      '<div class="next-actions">' +
+        '<button type="button" data-action="use-best-run">В Spider-план</button>' +
+        '<span class="then">подставит +' + best.spiders + ' за ресет и забег ' + dur(best.time) + '</span>' +
+      '</div>';
+  }
+
+  function useBestRun() {
+    var advice = state.advice;
+    if (!advice) return;
+    setField('spPerReset', String(advice.bestRun.spiders));
+    setField('spRunMinutes', fmt(advice.bestRun.time / 60, 3));
+    update();
   }
 
   function renderCandy(result, p, raw) {
@@ -463,7 +490,6 @@
         fact('Покупок', String(result.steps.length)) +
         fact('CC/s в конце', fmt(result.finalRate) + ' <span class="muted">' + fmtMult(result.finalRate / result.startRate) + '</span>') +
         fact('Потрачено всего', fmt(result.totalCost)) +
-        fact('Spiders за ресет', spidersText(p, result, raw)) +
       '</dl>' +
       '<p class="gen-levels">' + generators + '</p>' +
       (result.steps.length ? timeBar(result.totalTime, timeParts) + timeLegend(timeParts) : '') +
@@ -678,8 +704,12 @@
     renderFarm(raw, candy);
     var spiders = spiderParams(raw, state.candyResult);
     state.spiderResult = calc.optimizeSpiders(spiders);
-    var perReset = num(raw, 'spPerReset');
-    ui.prestige.textContent = perReset > 0 ? '🕷 Ресет: +' + fmt(perReset) + ' Spiders' : '🕷 Ресет';
+    state.advice = calc.resetAdvice(candy, state.candyResult, spiderMultiplier(raw), num(raw, 'spExp'));
+    renderReset(state.advice);
+    var gain = resetGain(raw);
+    var ready = Boolean(state.advice && state.advice.resetNow);
+    ui.prestige.classList.toggle('ready', ready);
+    ui.prestige.textContent = (ready ? '🕷 Пора ресет' : '🕷 Ресет') + (gain > 0 ? ': +' + fmt(gain) + ' Spiders' : '');
     renderFormula(calc.candyRunTotal(candy), raw);
     renderSpiders(state.spiderResult, spiders, raw);
   }
@@ -688,35 +718,37 @@
    * "Ресет": back to the start of a run. Board levels to 0 and prices to the first ones (rounded to
    * 3 digits, since the game shows rounded prices and the first ones are round); generators to
    * level 1 with level-1 prices and production without Gain/Speed; Gen 2–3 (bought with Candy Corn)
-   * lock again; Candy Corn on hand to 0; "+Spiders за ресет" is added to Spiders.
+   * lock again; Candy Corn on hand to 0; Spiders by the formula (or "+Spiders за ресет") are added.
    */
   function prestige() {
     var raw = readRaw();
     var p = candyParams(raw);
-    var perReset = num(raw, 'spPerReset');
+    var gain = resetGain(raw);
     if (!window.confirm('Ресет: сбросить Candy Corn борд и генераторы к началу забега' +
-      (perReset > 0 ? ' и получить +' + fmt(perReset) + ' Spiders' : '') + '?')) return;
+      (gain > 0 ? ' и получить +' + fmt(gain) + ' Spiders' : '') + '?')) return;
 
-    var boardFactor = Math.pow(p.boost.mult, p.boost.level) * Math.pow(p.speed.mult, p.speed.level);
+    var fresh = calc.resetCandyParams(p);
     ['boost', 'speed'].forEach(function (id) {
-      var u = p[id];
-      if (u.level > 0 && u.price > 0) setField(id + 'Price', fmt(u.price / Math.pow(u.growth, u.level), 3));
+      if (fresh[id].price > 0) setField(id + 'Price', fmt(fresh[id].price, 3));
       setField(id + 'Level', '0');
     });
     GEN_NUMBERS.forEach(function (n) {
-      var g = p.generators[n - 1];
-      if (g.level >= 1) {
-        setField('gen' + n + 'Level', g.candyUnlock ? '0' : '1');
-        if (g.price > 0) setField('gen' + n + 'Price', fmt(calc.generatorStartPrice(p, g.level, g.price), 3));
-        if (g.cps > 0) setField('gen' + n + 'Cps', fmt(g.cps / g.level / boardFactor, 4));
-      } else if (g.cps > 0) {
-        setField('gen' + n + 'Cps', fmt(g.cps / boardFactor, 4));
-      }
+      var before = p.generators[n - 1];
+      var after = fresh.generators[n - 1];
+      setField('gen' + n + 'Level', String(after.level));
+      if (before.level >= 1 && after.price > 0) setField('gen' + n + 'Price', fmt(after.price, 3));
+      if (after.cps > 0) setField('gen' + n + 'Cps', fmt(after.cps, 4));
     });
     setField('bank', '0');
-    if (perReset > 0) setField('spBank', fmt(num(raw, 'spBank') + perReset, 4));
+    if (gain > 0) setField('spBank', fmt(num(raw, 'spBank') + gain, 4));
     update();
     setTransferStatus('');
+  }
+
+  // Spiders a reset gives now: by the formula when it can be computed, else "+Spiders за ресет".
+  function resetGain(raw) {
+    var byFormula = calc.spidersForRun(calc.candyRunTotal(candyParams(raw)), spiderMultiplier(raw), num(raw, 'spExp'));
+    return byFormula >= 0 ? byFormula : num(raw, 'spPerReset');
   }
 
   function setTransferStatus(text) {
@@ -792,6 +824,8 @@
       buyCandy();
     } else if (target.dataset.action === 'buy-spider') {
       buySpider();
+    } else if (target.dataset.action === 'use-best-run') {
+      useBestRun();
     }
   });
   ui.prestige.addEventListener('click', prestige);

@@ -583,8 +583,38 @@ tr.current td { background: var(--row-highlight); }
 .toolbar .prestige {
   margin-left: auto;
   padding: 9px 14px;
+  background: var(--panel);
+  border-color: var(--border);
   border-radius: 10px;
+  color: var(--muted);
 }
+
+/* Lit when resetting now beats continuing the run. */
+.toolbar .prestige.ready {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  animation: prestige-pulse 1.6s ease-out infinite;
+}
+
+@keyframes prestige-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 139, 43, 0.55); }
+  70% { box-shadow: 0 0 0 12px rgba(255, 139, 43, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 139, 43, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolbar .prestige.ready { animation: none; }
+}
+
+.reset-verdict {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.reset-verdict.ready { color: var(--accent); }
+.reset-verdict + .muted { margin: 0; font-size: 13px; }
 
 @media (max-width: 520px) {
   .toolbar .prestige { flex: 1 1 100%; }

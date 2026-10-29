@@ -307,3 +307,55 @@ test('spidersForRun_ShouldMatchGameReadings_WhenSpidersBoostIsBought', () => {
   assert.equal(calc.spidersForRun(1e6, 1, 0.449), 1);
   assert.equal(calc.spidersForRun(0.99e6, 1, 0.449), 0);
 });
+
+// ---------- reset timing ----------
+
+function exportD(overrides) {
+  // In-game state at "+13 Spiders" with Spiders Boost ×1.2.
+  return candyParams({
+    bank: 30e6,
+    boost: { level: 21, price: 104.8e6 },
+    speed: { level: 14, price: 74.55e6 },
+    generators: [
+      generator({ level: 41, price: 1.695e6, cps: 58.51e3 }),
+      generator({ level: 33, price: 19.18e6, cps: 471.2e3, candyUnlock: true, unlockCost: 100e3 }),
+      generator({ candyUnlock: true, unlockCost: 25e9 }), generator(), generator()
+    ],
+    ...overrides
+  });
+}
+
+test('resetCandyParams_ShouldReturnFirstPrices_WhenRunIsReset', () => {
+  const fresh = calc.resetCandyParams(exportD());
+  assert.equal(calc.formatAmount(fresh.boost.price), '50');
+  assert.equal(fresh.boost.level, 0);
+  assert.equal(calc.formatAmount(fresh.speed.price), '200');
+  assert.equal(fresh.generators[0].level, 1);
+  assert.equal(Math.round(fresh.generators[0].price), 10);
+  assert.equal(fresh.generators[1].level, 0, 'Gen 2 is locked again');
+  assert.equal(calc.formatAmount(fresh.generators[1].price), '2K');
+  assert.equal(fresh.bank, 0);
+});
+
+test('spiderMilestones_ShouldFollowFormula_WhenRateIsConstant', () => {
+  const events = [{ time: 0, rate: 1e6 }, { time: 100, rate: 1e6 }];
+  const times = calc.spiderMilestones(events, 0, 0, 1, 0.5).map((m) => Math.round(m.time));
+  assert.deepEqual(times, [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]);
+});
+
+test('resetAdvice_ShouldAimAtBestRun_WhenRunJustStarted', () => {
+  const fresh = calc.resetCandyParams(exportD());
+  const advice = calc.resetAdvice(fresh, calc.optimizeCandy(fresh), 1.2, 0.449);
+  assert.equal(advice.spidersNow, 0);
+  assert.equal(advice.resetNow, false);
+  assert.equal(advice.target.spiders, advice.bestRun.spiders);
+  assert.ok(advice.bestRun.rate > 0);
+});
+
+test('resetAdvice_ShouldSayResetNow_WhenRunIsFarPastBestPoint', () => {
+  const p = exportD({ bank: 1e13 });
+  const advice = calc.resetAdvice(p, calc.optimizeCandy(p), 1.2, 0.449);
+  assert.ok(advice.spidersNow > advice.bestRun.spiders);
+  assert.equal(advice.resetNow, true);
+  assert.equal(advice.target, null);
+});

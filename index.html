@@ -10,14 +10,14 @@
 </head>
 <body>
   <header class="top">
-    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.2</span></h1>
+    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.3</span></h1>
     <p class="subtitle">Halloween Part 3 · самый быстрый порядок покупок до конца борда</p>
     <div class="toolbar">
       <nav class="tabs" role="tablist" aria-label="Борд">
         <button type="button" role="tab" id="tab-candy" data-tab="candy" aria-controls="panel-candy">🍬 Candy Corn</button>
         <button type="button" role="tab" id="tab-spiders" data-tab="spiders" aria-controls="panel-spiders">🕷 Spiders</button>
       </nav>
-      <button type="button" id="prestige" class="primary prestige" title="Сбросить Candy Corn борд и генераторы к началу забега и добавить Spiders">🕷 Ресет</button>
+      <button type="button" id="prestige" class="prestige" title="Сбросить Candy Corn борд и генераторы к началу забега и добавить Spiders. Загорается оранжевым, когда ресетать выгоднее, чем продолжать.">🕷 Ресет</button>
       <details class="transfer">
         <summary>Экспорт / импорт</summary>
         <div class="transfer-panel">
@@ -125,7 +125,8 @@
           <ul class="notes">
             <li>CC/s = сумма генераторов × Gain<sup>ур.</sup> × Speed<sup>ур.</sup>. Gain и Speed ускоряют все генераторы одинаково.</li>
             <li>Начальные цены (восстановлены из игры): Gain 50, Speed 200, Gen 1 — 10 за 2-й уровень, Gen 2 — открыть 100K, потом 2K за 2-й уровень. Производство на уровень без множителей: Gen 1 — 1/с, Gen 2 — 10/с.</li>
-            <li>«🕷 Ресет» сбрасывает борд и генераторы к началу забега (цены — к самым первым), закрывает Gen 2–3 и добавляет «+Spiders за ресет» к Spiders.</li>
+            <li>«🕷 Ресет» сбрасывает борд и генераторы к началу забега (цены — к самым первым), закрывает Gen 2–3 и добавляет Spiders по формуле.</li>
+            <li>Когда ресетать: новый забег симулируется по CC-плану (после борда докупаются генераторы) и находится момент с наибольшим числом Spiders в час. Текущий забег стоит продолжать, пока следующие Spiders в нём приходят быстрее этого темпа; дальше кнопка ресета загорается оранжевым.</li>
             <li>Покупка — сразу, как хватает Candy Corn. Порядок Gain/Speed и количество покупок генераторов перебираются точно. Очередь генераторов строится так, чтобы каждая пара соседних покупок стояла в выгодном порядке, а потом план дорабатывается: убрать/добавить уровень генератора, сдвинуть покупку.</li>
             <li>Порядок не зависит от общего уровня CC/s — от него зависит только время.</li>
           </ul>
@@ -142,6 +143,10 @@
           <article class="card">
             <h2>Следующая покупка</h2>
             <div data-role="next"></div>
+          </article>
+          <article class="card">
+            <h2>Когда ресетать</h2>
+            <div data-role="reset"></div>
           </article>
           <article class="card">
             <h2>Итог до конца борда</h2>
@@ -180,7 +185,7 @@
           <label class="row"><span>+Spiders за ресет</span><input type="text" data-field="spPerReset" inputmode="decimal" autocomplete="off" spellcheck="false"></label>
           <label class="row"><span>Забег, минут</span><input type="text" data-field="spRunMinutes" inputmode="decimal" autocomplete="off" spellcheck="false"></label>
           <p class="row total"><span>Доход</span><strong id="spider-rate">—</strong></p>
-          <p class="hint">«+Spiders за ресет» — сколько игра обещает за ресет в конце твоего обычного забега.</p>
+          <p class="hint">«+Spiders за ресет» и длина забега — твой обычный забег. Лучший забег можно подставить кнопкой в карточке «Когда ресетать» на вкладке Candy Corn.</p>
         </details>
 
         <details class="section" open>
