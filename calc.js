@@ -429,6 +429,7 @@
       waitByKind: waitByKind,
       startLevels: p.generators.map(function (g) { return g.level; }),
       finalLevels: gens.map(function (g) { return g.level; }),
+      bankLeft: bank,
       referenceLevel: gens[top].level
     };
   }
@@ -567,7 +568,7 @@
   function validateSpiders(p) {
     var problems = [];
     if (!(p.bank >= 0)) problems.push('Spiders сейчас: введи число ≥ 0');
-    if (!(p.perReset > 0)) problems.push('+Spiders за ресет: введи число больше 0');
+    if (!(p.perReset > 0)) problems.push('+Spiders за ресет пока 0: план появится, когда за забег соберётся 1M CC (вкладка Candy Corn)');
     if (!(p.runMinutes > 0)) problems.push('Длина забега: введи число минут больше 0');
     if (!(p.exponent >= 0) || !isFinite(p.exponent)) problems.push('Степень k: введи число ≥ 0');
     checkLeveledUpgrade(p.ccBoost, 'CC Boost', problems);

@@ -10,7 +10,7 @@
 </head>
 <body>
   <header class="top">
-    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.3</span></h1>
+    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.4</span></h1>
     <p class="subtitle">Halloween Part 3 · самый быстрый порядок покупок до конца борда</p>
     <div class="toolbar">
       <nav class="tabs" role="tablist" aria-label="Борд">
@@ -182,10 +182,10 @@
         <details class="section" open>
           <summary>Сейчас в игре</summary>
           <label class="row"><span>Spiders</span><input type="text" data-field="spBank" inputmode="decimal" autocomplete="off" spellcheck="false"></label>
-          <label class="row"><span>+Spiders за ресет</span><input type="text" data-field="spPerReset" inputmode="decimal" autocomplete="off" spellcheck="false"></label>
+          <p class="row total"><span>+Spiders за ресет</span><strong id="sp-per-reset">—</strong></p>
           <label class="row"><span>Забег, минут</span><input type="text" data-field="spRunMinutes" inputmode="decimal" autocomplete="off" spellcheck="false"></label>
           <p class="row total"><span>Доход</span><strong id="spider-rate">—</strong></p>
-          <p class="hint">«+Spiders за ресет» и длина забега — твой обычный забег. Лучший забег можно подставить кнопкой в карточке «Когда ресетать» на вкладке Candy Corn.</p>
+          <p class="hint">«+Spiders за ресет» считается сам — сколько даст ресет сейчас (как «Spiders за ресет» в итоге вкладки Candy Corn). Длина забега — твой обычный забег.</p>
         </details>
 
         <details class="section" open>
@@ -230,10 +230,7 @@
           <label class="row"><span>Степень k</span><input type="text" data-field="spExp" inputmode="decimal" autocomplete="off"></label>
           <p class="row total"><span>Собрано за этот забег</span><strong id="run-total">—</strong></p>
           <p class="row total"><span>×Spiders (Spiders Boost)</span><strong id="spider-mult">—</strong></p>
-          <div class="fit-actions">
-            <span>Сейчас по формуле: <strong id="formula-spiders">—</strong></span>
-            <button type="button" id="use-formula">В «+Spiders за ресет»</button>
-          </div>
+          <p class="row total"><span>Сейчас по формуле</span><strong id="formula-spiders">—</strong></p>
           <p class="hint">CC — собранные за забег, ×Sp — Spiders Boost. k = 0.449 выведено по замерам из игры. «Собрано» — по уровням и ценам вкладки Candy Corn плюс CC на руках; проклятия и другие покупки не видны, поэтому в игре может выйти чуть больше.</p>
         </details>
 
