@@ -1,18 +1,17 @@
 /*
- * Candy Corn board optimizer (Halloween Part 3) — pure logic, no DOM.
- * Number parsing/formatting and the fastest purchase order until the board is maxed.
+ * Candy Corn & Spider board optimizer (Halloween Part 3) — pure logic, no DOM.
+ * Number parsing/formatting, a shared exact search over upgrade chains, and the two boards.
  * Loads as a browser global (window.CandyCalc) or as a CommonJS module (tests).
  */
 (function (root) {
   'use strict';
 
+  // ---------- numbers ----------
+
   var SUFFIXES = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc',
     'Ud', 'Dd', 'Td', 'Qad', 'Qid', 'Sxd', 'Spd', 'Ocd', 'Nod', 'Vg'];
   var SUFFIX_EXPONENT = {};
   SUFFIXES.forEach(function (suffix, i) { SUFFIX_EXPONENT[suffix.toLowerCase()] = i * 3; });
-
-  // Safety net for the generator dimension of the search (only odd inputs get near it).
-  var GENERATOR_LEVEL_CAP = 3000;
 
   // "25B", "1.5Qa", "1,5k", "2e12", "100 000" -> number; NaN when unreadable.
   function parseAmount(text) {
@@ -61,11 +60,131 @@
     return units.slice(first, first + 3).map(function (u) { return u[0] + u[1]; }).join(' ');
   }
 
+  // ---------- exact search over upgrade chains ----------
+
+  // Safety net for the open-ended generator sequence (only odd inputs get near it).
+  var STEP_CAP = 3000;
+
+  function geometricCosts(price, growth, count) {
+    var costs = new Float64Array(count);
+    for (var n = 0; n < count; n++) costs[n] = price * Math.pow(growth, n);
+    return costs;
+  }
+
+  // Income factor after n levels of an upgrade with a fixed multiplier per level.
+  function constantFactors(mult, count) {
+    var factors = new Float64Array(count + 1);
+    for (var n = 0; n <= count; n++) factors[n] = Math.pow(mult, n);
+    return factors;
+  }
+
+  function runningTotals(costs) {
+    var spent = new Float64Array(costs.length + 1);
+    for (var n = 0; n < costs.length; n++) spent[n + 1] = spent[n] + costs[n];
+    return spent;
+  }
+
+  function sum(values) {
+    var total = 0;
+    for (var i = 0; i < values.length; i++) total += values[i];
+    return total;
+  }
+
+  // Odometer step over chain positions (last chain changes fastest, like the state index).
+  function advance(pos, sizes) {
+    for (var d = pos.length - 1; d >= 0; d--) {
+      pos[d] += 1;
+      if (pos[d] < sizes[d]) return;
+      pos[d] = 0;
+    }
+  }
+
+  function spentAt(spent, pos) {
+    var total = 0;
+    for (var d = 0; d < pos.length; d++) total += spent[d][pos[d]];
+    return total;
+  }
+
+  function factorAt(chains, pos) {
+    var factor = 1;
+    for (var d = 0; d < pos.length; d++) factor *= chains[d].factors[pos[d]];
+    return factor;
+  }
+
+  // Purchases happen as soon as they are affordable, so the bank is max(0, start bank - spent).
+  function waitTime(startBank, spentBefore, cost, rate) {
+    return Math.max(0, cost - Math.max(0, startBank - spentBefore)) / rate;
+  }
+
+  /*
+   * Fastest order of purchases over several upgrade chains paid with one currency.
+   * chain = { costs: [...], factors: [...] (income factor after n purchases, factors[0] = 1), required }
+   * The bank and the income depend only on how many purchases of each chain are made,
+   * so this is an exact DP: the fastest way to a state is the fastest way to one of its
+   * predecessors plus one purchase. Required chains must be finished; optional ones may stop anywhere.
+   * Returns { order: [chain index, ...], counts: [purchases per chain] }.
+   */
+  function fastestOrder(chains, startBank, startRate) {
+    var dims = chains.length;
+    var sizes = chains.map(function (c) { return c.costs.length + 1; });
+    var spent = chains.map(function (c) { return runningTotals(c.costs); });
+    var strides = new Array(dims);
+    var total = 1;
+    for (var d = dims - 1; d >= 0; d--) {
+      strides[d] = total;
+      total *= sizes[d];
+    }
+
+    var time = new Float64Array(total).fill(Infinity);
+    var via = new Uint8Array(total);
+    var pos = new Int32Array(dims);
+    time[0] = 0;
+
+    for (var id = 1; id < total; id++) {
+      advance(pos, sizes);
+      var best = Infinity;
+      var move = 0;
+      for (d = 0; d < dims; d++) {
+        if (pos[d] === 0) continue;
+        pos[d] -= 1;
+        var t = time[id - strides[d]] +
+          waitTime(startBank, spentAt(spent, pos), chains[d].costs[pos[d]], startRate * factorAt(chains, pos));
+        pos[d] += 1;
+        if (t < best) {
+          best = t;
+          move = d + 1;
+        }
+      }
+      time[id] = best;
+      via[id] = move;
+    }
+
+    // Every required chain finished; on (near) ties prefer fewer optional purchases.
+    var bestId = -1;
+    for (id = 0; id < total; id++) {
+      var complete = true;
+      for (d = 0; d < dims && complete; d++) {
+        complete = !chains[d].required || Math.floor(id / strides[d]) % sizes[d] === sizes[d] - 1;
+      }
+      if (complete && (bestId < 0 || time[id] < time[bestId] * (1 - 1e-12))) bestId = id;
+    }
+
+    var order = [];
+    for (var cur = bestId; cur !== 0 && via[cur] !== 0; cur -= strides[via[cur] - 1]) order.push(via[cur] - 1);
+    order.reverse();
+    return {
+      order: order,
+      counts: chains.map(function (c, i) { return Math.floor(bestId / strides[i]) % sizes[i]; })
+    };
+  }
+
+  // ---------- validation helpers ----------
+
   function isWhole(n) {
     return Number.isInteger(n) && n >= 0;
   }
 
-  function checkBoardUpgrade(u, name, problems) {
+  function checkLeveledUpgrade(u, name, problems) {
     if (!isWhole(u.max) || u.max < 1) {
       problems.push(name + ': максимум уровней — целое число ≥ 1');
       return;
@@ -76,177 +195,428 @@
     if (!(u.growth >= 1)) problems.push(name + ': рост цены должен быть ≥ 1');
   }
 
-  function validate(p) {
-    var problems = [];
-    if (!(p.bank >= 0)) problems.push('Candy Corn сейчас: введи число ≥ 0');
-    if (!(p.rate > 0)) problems.push('CC/s: введи число больше 0');
-    checkBoardUpgrade(p.boost, 'Candy Corn Gain', problems);
-    checkBoardUpgrade(p.speed, 'Generator Speed', problems);
-    if (!isWhole(p.generator.level) || p.generator.level < 1) problems.push('Generator: уровень — целое число ≥ 1');
-    if (!(p.generator.price > 0)) problems.push('Generator: цена следующего уровня должна быть > 0');
-    if (!(p.generator.growth > 1)) problems.push('Generator: рост цены должен быть > 1');
-    return problems;
+  // ---------- Candy Corn board ----------
+
+  /*
+   * Generator price multiplier from level L to L+1. Fitted to in-game prices:
+   * base 1.25 + step 0.005 per level (×1.3 at level 10, ×1.44 at 38, ×1.45 at 40).
+   */
+  function generatorGrowth(p, level) {
+    return p.genGrowthBase + p.genGrowthStep * level;
   }
 
-  // Costs of the next `count` levels and running totals (spent[n] = cost of the first n levels).
-  function geometricChain(price, growth, count) {
-    var costs = new Float64Array(count);
-    var spent = new Float64Array(count + 1);
-    for (var n = 0; n < count; n++) {
-      costs[n] = price * Math.pow(growth, n);
-      spent[n + 1] = spent[n] + costs[n];
+  function checkGeneratorGrowth(p, problems) {
+    if (!(p.genGrowthBase >= 1) || !(p.genGrowthStep >= 0) || !(generatorGrowth(p, 1) > 1)) {
+      problems.push('Рост цены генераторов: база ≥ 1, шаг ≥ 0, и вместе больше 1');
     }
-    return { costs: costs, spent: spent };
   }
 
-  function powers(base, count) {
-    var out = new Float64Array(count + 1);
-    for (var n = 0; n <= count; n++) out[n] = Math.pow(base, n);
-    return out;
+  // A locked generator joins the plan when it is unlocked with Candy Corn and its stats after unlock are known.
+  function isPlannedUnlock(g) {
+    return g.level === 0 && g.candyUnlock && g.unlockCost > 0 && g.cps > 0 && g.price > 0;
   }
 
-  // CC/s after buying `boost`, `speed` and `generator` levels from the starting state.
-  function rateAfter(p, boostPower, speedPower, generatorBought) {
-    return p.rate * boostPower * speedPower * (p.generator.level + generatorBought) / p.generator.level;
+  function startProduction(p) {
+    return p.generators.reduce(function (total, g) { return g.level >= 1 ? total + g.cps : total; }, 0);
   }
 
-  // Purchases happen as soon as they are affordable, so the bank is max(0, start bank - spent).
-  function waitTime(startBank, spentBefore, cost, rate) {
-    return Math.max(0, cost - Math.max(0, startBank - spentBefore)) / rate;
+  function validateCandy(p) {
+    var problems = [];
+    var notes = [];
+    if (!(p.bank >= 0)) problems.push('Candy Corn сейчас: введи число ≥ 0');
+    checkLeveledUpgrade(p.boost, 'Candy Corn Gain', problems);
+    checkLeveledUpgrade(p.speed, 'Generator Speed', problems);
+    checkGeneratorGrowth(p, problems);
+    p.generators.forEach(function (g, i) {
+      var name = 'Generator ' + (i + 1);
+      if (!isWhole(g.level)) {
+        problems.push(name + ': уровень — целое число ≥ 0 (0 = закрыт)');
+      } else if (g.level >= 1) {
+        if (!(g.price > 0)) problems.push(name + ': цена следующего уровня должна быть > 0');
+        if (!(g.cps > 0)) problems.push(name + ': CC/s должен быть > 0');
+      } else if (g.candyUnlock && !isPlannedUnlock(g)) {
+        notes.push(name + ' закрыт и не учтён: впиши его CC/s и цену 2-го уровня сразу после открытия.');
+      }
+    });
+    if (problems.length === 0 && !(startProduction(p) > 0)) problems.push('Нужен хотя бы один открытый генератор с CC/s > 0');
+    return { problems: problems, notes: notes };
   }
 
   /*
-   * Exact search over states (boost levels bought, speed levels bought, generator levels bought).
-   * The bank and the rate depend only on the state, so the fastest way to reach each state
-   * is the fastest way to reach one of its three predecessors plus one more purchase.
+   * Next purchase block of a generator and its key (smaller = buy sooner) at production P.
+   * Key = cost of the block, discounted by the production it already adds while being bought,
+   * divided by the share of production it adds: Σ cost·P/P_before / (1 − P/P_after).
+   * For one level that is cost·(P + gain)/gain — two neighbouring purchases are in the right
+   * order exactly when their keys are. A locked generator's block is the unlock plus the levels
+   * right after it that give the smallest key.
    */
-  function searchOrder(p, generatorLimit) {
-    var A = geometricChain(p.boost.price, p.boost.growth, p.boost.max - p.boost.level);
-    var B = geometricChain(p.speed.price, p.speed.growth, p.speed.max - p.speed.level);
-    var G = geometricChain(p.generator.price, p.generator.growth, generatorLimit);
-    var nA = A.costs.length;
-    var nB = B.costs.length;
-    var strideJ = generatorLimit + 1;
-    var strideI = (nB + 1) * strideJ;
-    var time = new Float64Array((nA + 1) * strideI).fill(Infinity);
-    var via = new Uint8Array(time.length);
-    var boostPow = powers(p.boost.mult, nA);
-    var speedPow = powers(p.speed.mult, nB);
-    time[0] = 0;
+  function nextBlock(chain, p, production) {
+    if (!chain.locked) return { size: 1, key: chain.price * (production + chain.gain) / chain.gain };
+    var best = null;
+    var discounted = chain.unlockCost;
+    var current = production + chain.gain;
+    var price = chain.price;
+    for (var level = 1; level <= STEP_CAP; level++) {
+      var key = discounted * current / (current - production);
+      if (best && key >= best.key) break;
+      best = { size: level, key: key };
+      discounted += price * production / current;
+      current += chain.gain;
+      price *= generatorGrowth(p, level);
+    }
+    return best;
+  }
 
-    for (var i = 0; i <= nA; i++) {
-      for (var j = 0; j <= nB; j++) {
-        for (var k = 0; k <= generatorLimit; k++) {
-          var id = i * strideI + j * strideJ + k;
-          if (id === 0) continue;
-          var best = Infinity;
-          var move = 0;
-          var t;
-          if (i > 0) {
-            t = time[id - strideI] + waitTime(p.bank, A.spent[i - 1] + B.spent[j] + G.spent[k],
-              A.costs[i - 1], rateAfter(p, boostPow[i - 1], speedPow[j], k));
-            if (t < best) { best = t; move = 1; }
-          }
-          if (j > 0) {
-            t = time[id - strideJ] + waitTime(p.bank, A.spent[i] + B.spent[j - 1] + G.spent[k],
-              B.costs[j - 1], rateAfter(p, boostPow[i], speedPow[j - 1], k));
-            if (t < best) { best = t; move = 2; }
-          }
-          if (k > 0) {
-            t = time[id - 1] + waitTime(p.bank, A.spent[i] + B.spent[j] + G.spent[k - 1],
-              G.costs[k - 1], rateAfter(p, boostPow[i], speedPow[j], k - 1));
-            if (t < best) { best = t; move = 3; }
-          }
-          time[id] = best;
-          via[id] = move;
+  /*
+   * All generator purchases merged into one sequence by the key above.
+   * Board upgrades scale every generator equally, so this order does not depend on them.
+   * Each level adds the same CC/s (production is proportional to level, i.e. ×(1 + 1/L)).
+   * Stops after `maxSteps` or once a block's key exceeds `stopKey` (it can no longer pay off).
+   */
+  function generatorSequence(p, maxSteps, stopKey) {
+    var chains = [];
+    var production = 0;
+    p.generators.forEach(function (g, index) {
+      if (g.level >= 1) {
+        production += g.cps;
+        chains.push({ index: index, locked: false, gain: g.cps / g.level, level: g.level, price: g.price });
+      } else if (isPlannedUnlock(g)) {
+        chains.push({ index: index, locked: true, gain: g.cps, level: 0, price: g.price, unlockCost: g.unlockCost });
+      }
+    });
+
+    var steps = [];
+    while (steps.length < maxSteps && chains.length) {
+      var pick = null;
+      for (var i = 0; i < chains.length; i++) {
+        var block = nextBlock(chains[i], p, production);
+        if (!pick || block.key < pick.block.key) pick = { chain: chains[i], block: block };
+      }
+      if (pick.block.key > stopKey) break;
+      for (var n = 0; n < pick.block.size && steps.length < maxSteps; n++) {
+        var chain = pick.chain;
+        var cost = chain.locked ? chain.unlockCost : chain.price;
+        if (chain.locked) {
+          chain.locked = false;
+        } else {
+          chain.price *= generatorGrowth(p, chain.level);
         }
+        chain.level += 1;
+        production += chain.gain;
+        steps.push({ gen: chain.index, cost: cost, production: production });
       }
     }
+    return steps;
+  }
 
-    // Board maxed with k generator levels; prefer fewer generator levels on (near) ties.
-    var end = nA * strideI + nB * strideJ;
-    var bestK = 0;
-    for (var g = 1; g <= generatorLimit; g++) {
-      if (time[end + g] < time[end + bestK] * (1 - 1e-12)) bestK = g;
-    }
-
-    var order = [];
-    var cur = end + bestK;
-    while (cur !== 0 && via[cur] !== 0) {
-      if (via[cur] === 1) { order.push('boost'); cur -= strideI; }
-      else if (via[cur] === 2) { order.push('speed'); cur -= strideJ; }
-      else { order.push('generator'); cur -= 1; }
-    }
-    order.reverse();
-    return { order: order, generatorBought: bestK };
+  function solveCandy(p, sequence, production) {
+    var nA = p.boost.max - p.boost.level;
+    var nB = p.speed.max - p.speed.level;
+    var genFactors = new Float64Array(sequence.length + 1);
+    genFactors[0] = 1;
+    sequence.forEach(function (s, k) { genFactors[k + 1] = s.production / production; });
+    var found = fastestOrder([
+      { costs: geometricCosts(p.boost.price, p.boost.growth, nA), factors: constantFactors(p.boost.mult, nA), required: true },
+      { costs: geometricCosts(p.speed.price, p.speed.growth, nB), factors: constantFactors(p.speed.mult, nB), required: true },
+      { costs: Float64Array.from(sequence, function (s) { return s.cost; }), factors: genFactors, required: false }
+    ], p.bank, production);
+    var next = 0;
+    var order = found.order.map(function (d) {
+      if (d === 0) return 'boost';
+      if (d === 1) return 'speed';
+      next += 1;
+      return 'gen' + (sequence[next - 1].gen + 1);
+    });
+    return { order: order, generatorSteps: found.counts[2] };
   }
 
   /*
-   * A generator level (cost c, level lv, multiplier 1 + 1/lv) only pays off when
-   * c * (lv + 1) is below what is still left to buy after it, so it never pays off
-   * above the whole remaining board cost. 4x margin; optimize() widens the limit if it is hit.
+   * Replays an order of purchases ('boost', 'speed', 'gen1'..'gen5'; a 'genN' step on a locked
+   * generator unlocks it at level 1) and returns every step with costs and timings.
    */
-  function remainingCost(u) {
-    var spent = geometricChain(u.price, u.growth, u.max - u.level).spent;
-    return spent[spent.length - 1];
-  }
-
-  function initialGeneratorLimit(p) {
-    var boardCost = remainingCost(p.boost) + remainingCost(p.speed);
-    var k = 0;
-    while (k < GENERATOR_LEVEL_CAP &&
-      p.generator.price * Math.pow(p.generator.growth, k) * (p.generator.level + k + 1) <= 4 * boardCost) {
-      k++;
-    }
-    return Math.max(k, 1);
-  }
-
-  // Replays an order of purchases and returns every step with costs and timings.
-  function simulate(p, order) {
-    var bought = { boost: 0, speed: 0, generator: 0 };
-    var waitById = { boost: 0, speed: 0, generator: 0 };
+  function simulateCandy(p, order) {
+    var gens = p.generators.map(function (g) {
+      return { level: g.level, gain: g.level >= 1 ? g.cps / g.level : g.cps, price: g.price, unlockCost: g.unlockCost };
+    });
+    var bought = { boost: 0, speed: 0 };
+    var waitByKind = { boost: 0, speed: 0, gen: 0 };
+    var production = startProduction(p);
+    var rate = production;
     var bank = p.bank;
-    var rate = p.rate;
     var elapsed = 0;
     var totalCost = 0;
+
     var steps = order.map(function (id) {
-      var u = p[id];
-      var level = u.level + bought[id];
-      var cost = u.price * Math.pow(u.growth, bought[id]);
-      var mult = id === 'generator' ? (level + 1) / level : u.mult;
-      var wait = Math.max(0, cost - bank) / rate;
-      bank = Math.max(0, bank - cost);
-      elapsed += wait;
-      totalCost += cost;
-      waitById[id] += wait;
-      bought[id] += 1;
-      rate = rateAfter(p, Math.pow(p.boost.mult, bought.boost), Math.pow(p.speed.mult, bought.speed), bought.generator);
-      return { id: id, from: level, to: level + 1, cost: cost, mult: mult, wait: wait, elapsed: elapsed, rateAfter: rate };
+      var step = { id: id };
+      if (id === 'boost' || id === 'speed') {
+        var u = p[id];
+        step.kind = id;
+        step.from = u.level + bought[id];
+        step.cost = u.price * Math.pow(u.growth, bought[id]);
+        bought[id] += 1;
+      } else {
+        var g = gens[Number(id.slice(3)) - 1];
+        step.kind = 'gen';
+        step.from = g.level;
+        step.unlock = g.level === 0;
+        step.cost = step.unlock ? g.unlockCost : g.price;
+        if (!step.unlock) g.price *= generatorGrowth(p, g.level);
+        g.level += 1;
+        production += g.gain;
+      }
+      var newRate = production * Math.pow(p.boost.mult, bought.boost) * Math.pow(p.speed.mult, bought.speed);
+      step.to = step.from + 1;
+      step.wait = Math.max(0, step.cost - bank) / rate;
+      bank = Math.max(0, bank - step.cost);
+      elapsed += step.wait;
+      totalCost += step.cost;
+      waitByKind[step.kind] += step.wait;
+      step.elapsed = elapsed;
+      step.mult = newRate / rate;
+      step.rateAfter = newRate;
+      rate = newRate;
+      return step;
     });
+
+    // Level of the generator that produces the most at the end (used to value Gen Cost).
+    var top = 0;
+    gens.forEach(function (g, i) { if (g.gain * g.level > gens[top].gain * gens[top].level) top = i; });
+
     return {
       steps: steps,
       totalTime: elapsed,
       totalCost: totalCost,
+      startRate: startProduction(p),
       finalRate: rate,
-      waitById: waitById,
-      generatorFrom: p.generator.level,
-      generatorTo: p.generator.level + bought.generator
+      waitByKind: waitByKind,
+      startLevels: p.generators.map(function (g) { return g.level; }),
+      finalLevels: gens.map(function (g) { return g.level; }),
+      referenceLevel: gens[top].level
     };
   }
 
-  function optimize(p) {
-    var problems = validate(p);
-    if (problems.length) return { problems: problems };
-    var limit = initialGeneratorLimit(p);
-    var found = searchOrder(p, limit);
-    while (found.generatorBought === limit && limit < GENERATOR_LEVEL_CAP) {
-      limit = Math.min(GENERATOR_LEVEL_CAP, limit * 2);
-      found = searchOrder(p, limit);
+  // Total time of an order, without building step details (used by the local improvement below).
+  function candyTime(p, order) {
+    var levels = p.generators.map(function (g) { return g.level; });
+    var prices = p.generators.map(function (g) { return g.price; });
+    var gains = p.generators.map(function (g) { return g.level >= 1 ? g.cps / g.level : g.cps; });
+    var production = startProduction(p);
+    var rate = production;
+    var bank = p.bank;
+    var elapsed = 0;
+    var boostBought = 0;
+    var speedBought = 0;
+    for (var t = 0; t < order.length; t++) {
+      var id = order[t];
+      var cost;
+      if (id === 'boost') {
+        cost = p.boost.price * Math.pow(p.boost.growth, boostBought);
+        boostBought += 1;
+      } else if (id === 'speed') {
+        cost = p.speed.price * Math.pow(p.speed.growth, speedBought);
+        speedBought += 1;
+      } else {
+        var i = Number(id.slice(3)) - 1;
+        if (levels[i] === 0) {
+          cost = p.generators[i].unlockCost;
+        } else {
+          cost = prices[i];
+          prices[i] *= generatorGrowth(p, levels[i]);
+        }
+        levels[i] += 1;
+        production += gains[i];
+      }
+      elapsed += Math.max(0, cost - bank) / rate;
+      bank = Math.max(0, bank - cost);
+      rate = production * Math.pow(p.boost.mult, boostBought) * Math.pow(p.speed.mult, speedBought);
     }
-    var result = simulate(p, found.order);
+    return elapsed;
+  }
+
+  var MOVE_WINDOW = 4;
+  var MAX_PASSES = 20;
+
+  function tryOrder(p, state, candidate) {
+    var t = candyTime(p, candidate);
+    if (t >= state.time * (1 - 1e-12)) return false;
+    state.order = candidate;
+    state.time = t;
+    return true;
+  }
+
+  /*
+   * Local improvement of a purchase order: drop or add one generator purchase, or move one purchase
+   * a few places, whenever that finishes the board sooner. Covers what a single merged generator
+   * sequence cannot express (e.g. one level less of one generator, one more of another near the end).
+   */
+  function polishCandy(p, order) {
+    var genIds = [];
+    p.generators.forEach(function (g, i) { if (g.level >= 1 || isPlannedUnlock(g)) genIds.push('gen' + (i + 1)); });
+    var state = { order: order, time: candyTime(p, order) };
+    for (var pass = 0; pass < MAX_PASSES; pass++) {
+      var improved = false;
+      for (var i = state.order.length - 1; i >= 0; i--) {
+        var id = state.order[i];
+        if (id === 'boost' || id === 'speed') continue;
+        improved = tryOrder(p, state, state.order.slice(0, i).concat(state.order.slice(i + 1))) || improved;
+      }
+      for (var g = 0; g < genIds.length; g++) {
+        for (var j = 0; j < state.order.length; j++) {
+          improved = tryOrder(p, state, state.order.slice(0, j).concat([genIds[g]], state.order.slice(j))) || improved;
+        }
+      }
+      for (i = 0; i < state.order.length; i++) {
+        for (j = Math.max(0, i - MOVE_WINDOW); j <= Math.min(state.order.length - 1, i + MOVE_WINDOW); j++) {
+          if (j === i || state.order[i] === state.order[j]) continue;
+          var moved = state.order.slice();
+          moved.splice(j, 0, moved.splice(i, 1)[0]);
+          improved = tryOrder(p, state, moved) || improved;
+        }
+      }
+      if (!improved) break;
+    }
+    return state.order;
+  }
+
+  function optimizeCandy(p) {
+    var check = validateCandy(p);
+    if (check.problems.length) return { problems: check.problems, notes: check.notes };
+    var production = startProduction(p);
+    var boardCost = sum(geometricCosts(p.boost.price, p.boost.growth, p.boost.max - p.boost.level)) +
+      sum(geometricCosts(p.speed.price, p.speed.growth, p.speed.max - p.speed.level));
+
+    // A generator block pays off only while cost × (P + gain) / gain is below what is left to buy
+    // after it (≤ the whole board cost). 4× margin; widened if the optimum uses the whole sequence.
+    var sequence = generatorSequence(p, STEP_CAP, 4 * boardCost);
+    var found = solveCandy(p, sequence, production);
+    while (found.generatorSteps === sequence.length && sequence.length < STEP_CAP) {
+      sequence = generatorSequence(p, Math.min(STEP_CAP, Math.max(1, sequence.length) * 2), Infinity);
+      found = solveCandy(p, sequence, production);
+    }
+
+    var result = simulateCandy(p, polishCandy(p, found.order));
     result.problems = [];
-    result.capped = found.generatorBought === GENERATOR_LEVEL_CAP;
+    result.notes = check.notes;
+    result.capped = found.generatorSteps === STEP_CAP;
     return result;
+  }
+
+  // ---------- Spider board ----------
+
+  var SPIDER_UPGRADES = ['ccBoost', 'spiderBoost', 'genCost'];
+  var SPIDER_UNLOCKS = ['gen4', 'gen5'];
+
+  /*
+   * How much one purchase multiplies Spider income, with Spiders ∝ (CC per run)^exponent:
+   * CC Boost ×m to CC; Spiders Boost ×m to Spiders directly; Gen Cost ÷m on generator prices
+   * = log(m)/log(price growth at level L) extra levels for every generator, i.e. ×(1 + that / L)
+   * to CC; a generator unlock multiplies CC by its effect.
+   */
+  function spiderFactor(p, id) {
+    if (id === 'ccBoost') return Math.pow(p.ccBoost.mult, p.exponent);
+    if (id === 'spiderBoost') return p.spiderBoost.mult;
+    if (id === 'genCost') {
+      var extraLevels = Math.log(p.genCost.mult) / Math.log(generatorGrowth(p, p.genLevelRef));
+      return Math.pow(1 + extraLevels / p.genLevelRef, p.exponent);
+    }
+    return Math.pow(p[id].effect, p.exponent);
+  }
+
+  function spiderRate(p) {
+    return p.perReset / (p.runMinutes * 60);
+  }
+
+  function validateSpiders(p) {
+    var problems = [];
+    if (!(p.bank >= 0)) problems.push('Spiders сейчас: введи число ≥ 0');
+    if (!(p.perReset > 0)) problems.push('+Spiders за ресет: введи число больше 0');
+    if (!(p.runMinutes > 0)) problems.push('Длина забега: введи число минут больше 0');
+    if (!(p.exponent >= 0) || !isFinite(p.exponent)) problems.push('Степень k: введи число ≥ 0');
+    checkLeveledUpgrade(p.ccBoost, 'CC Boost', problems);
+    checkLeveledUpgrade(p.spiderBoost, 'Spiders Boost', problems);
+    checkLeveledUpgrade(p.genCost, 'Gen Cost', problems);
+    checkGeneratorGrowth(p, problems);
+    if (!(p.genLevelRef >= 1)) problems.push('Уровень генераторов к концу забега должен быть ≥ 1');
+    SPIDER_UNLOCKS.forEach(function (id) {
+      var name = id === 'gen4' ? 'Generator 4' : 'Generator 5';
+      if (!p[id].planned) return;
+      if (!(p[id].cost > 0)) problems.push(name + ': цена открытия должна быть > 0');
+      if (!(p[id].effect >= 1)) problems.push(name + ': эффект на CC/s должен быть ≥ 1 (1 = неизвестно)');
+    });
+    return problems;
+  }
+
+  // Replays an order ('ccBoost', 'spiderBoost', 'genCost', 'gen4', 'gen5') and returns every step.
+  function simulateSpiders(p, order) {
+    var bought = { ccBoost: 0, spiderBoost: 0, genCost: 0, gen4: 0, gen5: 0 };
+    var waitById = { ccBoost: 0, spiderBoost: 0, genCost: 0, gen4: 0, gen5: 0 };
+    var startRate = spiderRate(p);
+    var rate = startRate;
+    var bank = p.bank;
+    var elapsed = 0;
+    var totalCost = 0;
+
+    var steps = order.map(function (id) {
+      var step = { id: id, factor: spiderFactor(p, id) };
+      if (SPIDER_UPGRADES.indexOf(id) >= 0) {
+        var u = p[id];
+        step.from = u.level + bought[id];
+        step.cost = u.price * Math.pow(u.growth, bought[id]);
+        step.effect = u.mult;
+      } else {
+        step.from = 0;
+        step.unlock = true;
+        step.cost = p[id].cost;
+        step.effect = p[id].effect;
+      }
+      bought[id] += 1;
+      step.to = step.from + 1;
+      step.wait = Math.max(0, step.cost - bank) / rate;
+      bank = Math.max(0, bank - step.cost);
+      elapsed += step.wait;
+      totalCost += step.cost;
+      waitById[id] += step.wait;
+      rate = startRate * Object.keys(bought).reduce(function (f, key) {
+        return f * Math.pow(spiderFactor(p, key), bought[key]);
+      }, 1);
+      step.elapsed = elapsed;
+      step.perResetAfter = p.perReset * rate / startRate;
+      return step;
+    });
+
+    return {
+      steps: steps,
+      totalTime: elapsed,
+      totalCost: totalCost,
+      runSeconds: p.runMinutes * 60,
+      startPerReset: p.perReset,
+      finalPerReset: p.perReset * rate / startRate,
+      waitById: waitById
+    };
+  }
+
+  function optimizeSpiders(p) {
+    var problems = validateSpiders(p);
+    if (problems.length) return { problems: problems };
+    var ids = SPIDER_UPGRADES.concat(SPIDER_UNLOCKS.filter(function (id) { return p[id].planned; }));
+    var chains = ids.map(function (id) {
+      if (SPIDER_UPGRADES.indexOf(id) < 0) {
+        return { costs: Float64Array.of(p[id].cost), factors: Float64Array.of(1, spiderFactor(p, id)), required: true };
+      }
+      var u = p[id];
+      var count = u.max - u.level;
+      return { costs: geometricCosts(u.price, u.growth, count), factors: constantFactors(spiderFactor(p, id), count), required: true };
+    });
+    var found = fastestOrder(chains, p.bank, spiderRate(p));
+    var result = simulateSpiders(p, found.order.map(function (d) { return ids[d]; }));
+    result.problems = [];
+    return result;
+  }
+
+  // k in Spiders ∝ CC^k from two readings of "+X Spiders" at different Candy Corn; NaN when unusable.
+  function fitExponent(cc1, sp1, cc2, sp2) {
+    if (!(cc1 > 0 && sp1 > 0 && cc2 > 0 && sp2 > 0) || cc1 === cc2) return NaN;
+    return Math.log(sp2 / sp1) / Math.log(cc2 / cc1);
   }
 
   var api = {
@@ -254,9 +624,14 @@
     parseAmount: parseAmount,
     formatAmount: formatAmount,
     formatDuration: formatDuration,
-    validate: validate,
-    simulate: simulate,
-    optimize: optimize
+    fastestOrder: fastestOrder,
+    generatorGrowth: generatorGrowth,
+    optimizeCandy: optimizeCandy,
+    simulateCandy: simulateCandy,
+    optimizeSpiders: optimizeSpiders,
+    simulateSpiders: simulateSpiders,
+    spiderFactor: spiderFactor,
+    fitExponent: fitExponent
   };
 
   if (typeof module === 'object' && module.exports) module.exports = api;
