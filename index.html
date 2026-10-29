@@ -10,13 +10,14 @@
 </head>
 <body>
   <header class="top">
-    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.0</span></h1>
+    <h1>🎃 Candy Corn Board Optimizer <span class="version">v2.1</span></h1>
     <p class="subtitle">Halloween Part 3 · самый быстрый порядок покупок до конца борда</p>
     <div class="toolbar">
       <nav class="tabs" role="tablist" aria-label="Борд">
         <button type="button" role="tab" id="tab-candy" data-tab="candy" aria-controls="panel-candy">🍬 Candy Corn</button>
         <button type="button" role="tab" id="tab-spiders" data-tab="spiders" aria-controls="panel-spiders">🕷 Spiders</button>
       </nav>
+      <button type="button" id="prestige" class="primary prestige" title="Сбросить Candy Corn борд и генераторы к началу забега и добавить Spiders">🕷 Ресет</button>
       <details class="transfer">
         <summary>Экспорт / импорт</summary>
         <div class="transfer-panel">
@@ -122,6 +123,8 @@
           <summary>Как это считается</summary>
           <ul class="notes">
             <li>CC/s = сумма генераторов × Gain<sup>ур.</sup> × Speed<sup>ур.</sup>. Gain и Speed ускоряют все генераторы одинаково.</li>
+            <li>Начальные цены (восстановлены из игры): Gain 50, Speed 200, Gen 1 — 10 за 2-й уровень, Gen 2 — открыть 100K, потом 2K за 2-й уровень. Производство на уровень без множителей: Gen 1 — 1/с, Gen 2 — 10/с.</li>
+            <li>«🕷 Ресет» сбрасывает борд и генераторы к началу забега (цены — к самым первым), закрывает Gen 2–3 и добавляет «+Spiders за ресет» к Spiders.</li>
             <li>Покупка — сразу, как хватает Candy Corn. Порядок Gain/Speed и количество покупок генераторов перебираются точно. Очередь генераторов строится так, чтобы каждая пара соседних покупок стояла в выгодном порядке, а потом план дорабатывается: убрать/добавить уровень генератора, сдвинуть покупку.</li>
             <li>Порядок не зависит от общего уровня CC/s — от него зависит только время.</li>
           </ul>
@@ -218,7 +221,7 @@
         <details class="section" open>
           <summary>Как Spiders зависят от CC</summary>
           <label class="row"><span>Степень k <small class="muted">(Spiders ∝ CC<sup>k</sup>)</small></span><input type="text" data-field="spExp" inputmode="decimal" autocomplete="off"></label>
-          <p class="hint">Подобрать k по двум замерам «+X Spiders» при разных Candy Corn за забег:</p>
+          <p class="hint">Подобрать k по двум замерам «+X Spiders» при разных Candy Corn за забег. Замер 1 уже известен: 1-й Spider даётся за 1M CC.</p>
           <div class="grid fit-grid">
             <span></span><span class="grid-head">CC за забег</span><span class="grid-head">+Spiders</span>
             <span class="name">Замер 1</span>
@@ -228,6 +231,11 @@
             <input type="text" data-field="spCc2" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Замер 2, Candy Corn">
             <input type="text" data-field="spSp2" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Замер 2, Spiders">
           </div>
+          <div class="fit-actions">
+            <span>Собрано за этот забег ≈ <strong id="run-total">—</strong></span>
+            <button type="button" id="take-run">В замер 2</button>
+          </div>
+          <p class="hint">Считается по уровням и ценам вкладки Candy Corn плюс CC на руках. Проклятия и другие покупки не видны, поэтому для замера проведи забег без них и впиши CC на руках в момент, когда «+X Spiders» вырос.</p>
           <div class="fit-actions">
             <span id="fit-result" class="muted">Заполни оба замера.</span>
             <button type="button" id="apply-fit" disabled>Подставить k</button>
@@ -260,6 +268,7 @@
         <details class="section">
           <summary>Как это считается</summary>
           <ul class="notes">
+            <li>Spiders за ресет зависят от всех Candy Corn, собранных за забег (не падают при покупках). 1-й Spider — за 1M CC, дальше Spiders ∝ CC<sup>k</sup>.</li>
             <li>Доход Spiders = +Spiders за ресет / длина забега. Spiders Boost умножает его напрямую.</li>
             <li>CC Boost ×1.35 к CC даёт ×1.35<sup>k</sup> к Spiders. Gen Cost ÷1.3 к ценам генераторов — это примерно лишние ln 1.3 / ln(рост цены) уровней каждому генератору, т. е. ×(1 + это/L) к CC.</li>
             <li>Порядок всех покупок перебирается точно. Доход считается непрерывным (без учёта того, что Spiders приходят порциями за ресет).</li>

@@ -141,6 +141,27 @@ test('simulateCandy_ShouldReproduceGamePrices_WhenGeneratorLevelsUp', () => {
   assert.deepEqual(otherPrices, ['2.57M', '3.56M', '4.95M']);
 });
 
+test('generatorStartPrice_ShouldRecoverLevelOnePrice_WhenGivenGamePrices', () => {
+  const p = candyParams();
+  assert.equal(Math.round(calc.generatorStartPrice(p, 40, 1.17e6)), 10);
+  assert.equal(Math.round(calc.generatorStartPrice(p, 31, 9.663e6)), 2000);
+});
+
+test('candyRunTotal_ShouldSumEverythingPaid_WhenLevelsAreKnown', () => {
+  // Export "11th Spider just given": Gain 20, Speed 13, Gen 1 lvl 42, Gen 2 lvl 31, nothing on hand.
+  const p = candyParams({
+    boost: { level: 20, price: 52.4e6 },
+    speed: { level: 13, price: 29.8e6 },
+    generators: [
+      generator({ level: 42, price: 2.468e6, cps: 28.71e3 }),
+      generator({ level: 31, price: 9.667e6, cps: 211.6e3, candyUnlock: true, unlockCost: 100e3 }),
+      generator({ candyUnlock: true, unlockCost: 25e9 }), generator(), generator()
+    ]
+  });
+  assert.ok(Math.abs(calc.candyRunTotal(p) - 103e6) < 0.2e6, `total ${calc.candyRunTotal(p)}`);
+  assert.equal(calc.candyRunTotal(candyParams()), 0);
+});
+
 test('optimizeCandy_ShouldMatchBruteForce_WhenOneGenerator', () => {
   const random = mulberry32(42);
   for (let run = 0; run < 30; run++) {

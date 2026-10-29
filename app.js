@@ -14,15 +14,15 @@
     // Candy Corn
     bank: '0',
     boostLevel: '0',
-    boostPrice: '1K',
+    boostPrice: '50',
     speedLevel: '0',
-    speedPrice: '2.5K',
+    speedPrice: '200',
     gen1Level: '1',
-    gen1Price: '100',
-    gen1Cps: '10',
+    gen1Price: '10',
+    gen1Cps: '1',
     gen2Level: '0',
-    gen2Price: '',
-    gen2Cps: '',
+    gen2Price: '2K',
+    gen2Cps: '10',
     gen3Level: '0',
     gen3Price: '',
     gen3Cps: '',
@@ -49,8 +49,8 @@
     spPerReset: '10',
     spRunMinutes: '15',
     spExp: '0.5',
-    spCc1: '',
-    spSp1: '',
+    spCc1: '1M',
+    spSp1: '1',
     spCc2: '',
     spSp2: '',
     ccbLevel: '0',
@@ -135,11 +135,13 @@
     farm: document.getElementById('farm-result'),
     fitResult: document.getElementById('fit-result'),
     applyFit: document.getElementById('apply-fit'),
+    runTotal: document.getElementById('run-total'),
+    prestige: document.getElementById('prestige'),
     transfer: document.getElementById('transfer'),
     transferStatus: document.getElementById('transfer-status')
   };
 
-  var state = { activeTab: DEFAULTS.activeTab, candyResult: null, spiderResult: null, fit: NaN };
+  var state = { activeTab: DEFAULTS.activeTab, candyResult: null, spiderResult: null, fit: NaN, runTotal: NaN };
 
   // ---------- state ----------
 
@@ -608,6 +610,13 @@
     } else {
       fields[step.id + 'Plan'].checked = false;
     }
+    // CC Boost speeds up every generator; Gen Cost makes every generator level cheaper.
+    var candy = candyParams(readRaw());
+    GEN_NUMBERS.forEach(function (n) {
+      var g = candy.generators[n - 1];
+      if (step.id === 'ccBoost' && g.cps > 0) setField('gen' + n + 'Cps', fmt(g.cps * step.effect, 4));
+      if (step.id === 'genCost' && g.price > 0) setField('gen' + n + 'Price', fmt(g.price / step.effect, 4));
+    });
     setField('spBank', fmt(Math.max(0, p.bank - step.cost), 4));
     setField('spPerReset', fmt(p.perReset * step.factor, 4));
     update();
@@ -635,8 +644,47 @@
     renderFarm(raw, candy);
     var spiders = spiderParams(raw, state.candyResult);
     state.spiderResult = calc.optimizeSpiders(spiders);
+    state.runTotal = calc.candyRunTotal(candy);
+    ui.runTotal.textContent = state.runTotal >= 0 ? fmt(state.runTotal) + ' CC' : '—';
+    var perReset = num(raw, 'spPerReset');
+    ui.prestige.textContent = perReset > 0 ? '🕷 Ресет: +' + fmt(perReset) + ' Spiders' : '🕷 Ресет';
     renderFit(raw);
     renderSpiders(state.spiderResult, spiders, raw);
+  }
+
+  /*
+   * "Ресет": back to the start of a run. Board levels to 0 and prices to the first ones (rounded to
+   * 3 digits, since the game shows rounded prices and the first ones are round); generators to
+   * level 1 with level-1 prices and production without Gain/Speed; Gen 2–3 (bought with Candy Corn)
+   * lock again; Candy Corn on hand to 0; "+Spiders за ресет" is added to Spiders.
+   */
+  function prestige() {
+    var raw = readRaw();
+    var p = candyParams(raw);
+    var perReset = num(raw, 'spPerReset');
+    if (!window.confirm('Ресет: сбросить Candy Corn борд и генераторы к началу забега' +
+      (perReset > 0 ? ' и получить +' + fmt(perReset) + ' Spiders' : '') + '?')) return;
+
+    var boardFactor = Math.pow(p.boost.mult, p.boost.level) * Math.pow(p.speed.mult, p.speed.level);
+    ['boost', 'speed'].forEach(function (id) {
+      var u = p[id];
+      if (u.level > 0 && u.price > 0) setField(id + 'Price', fmt(u.price / Math.pow(u.growth, u.level), 3));
+      setField(id + 'Level', '0');
+    });
+    GEN_NUMBERS.forEach(function (n) {
+      var g = p.generators[n - 1];
+      if (g.level >= 1) {
+        setField('gen' + n + 'Level', g.candyUnlock ? '0' : '1');
+        if (g.price > 0) setField('gen' + n + 'Price', fmt(calc.generatorStartPrice(p, g.level, g.price), 3));
+        if (g.cps > 0) setField('gen' + n + 'Cps', fmt(g.cps / g.level / boardFactor, 4));
+      } else if (g.cps > 0) {
+        setField('gen' + n + 'Cps', fmt(g.cps / boardFactor, 4));
+      }
+    });
+    setField('bank', '0');
+    if (perReset > 0) setField('spBank', fmt(num(raw, 'spBank') + perReset, 4));
+    update();
+    setTransferStatus('');
   }
 
   function setTransferStatus(text) {
@@ -693,6 +741,13 @@
     } else if (target.dataset.action === 'buy-spider') {
       buySpider();
     }
+  });
+  ui.prestige.addEventListener('click', prestige);
+  document.getElementById('take-run').addEventListener('click', function () {
+    if (!(state.runTotal > 0)) return;
+    setField('spCc2', fmt(state.runTotal, 4));
+    setField('spSp2', String(readRaw().spPerReset));
+    update();
   });
   ui.applyFit.addEventListener('click', function () {
     if (!(state.fit >= 0)) return;

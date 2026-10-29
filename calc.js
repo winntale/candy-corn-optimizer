@@ -205,6 +205,37 @@
     return p.genGrowthBase + p.genGrowthStep * level;
   }
 
+  // Price of level 1 → 2, recovered from the current level and price (undoes the growth above).
+  function generatorStartPrice(p, level, price) {
+    var start = price;
+    for (var l = level - 1; l >= 1; l--) start /= generatorGrowth(p, l);
+    return start;
+  }
+
+  /*
+   * Candy Corn collected this run as far as the calculator can see: everything paid for the current
+   * board and generator levels (prices recovered back to level 1) plus what is on hand.
+   * Purchases outside the calculator (curses, other board upgrades) are not included.
+   */
+  function candyRunTotal(p) {
+    var total = p.bank;
+    [p.boost, p.speed].forEach(function (u) {
+      if (!(u.level > 0)) return;
+      var base = u.price / Math.pow(u.growth, u.level);
+      total += u.growth === 1 ? base * u.level : base * (Math.pow(u.growth, u.level) - 1) / (u.growth - 1);
+    });
+    p.generators.forEach(function (g) {
+      if (!(g.level >= 1)) return;
+      if (g.candyUnlock) total += g.unlockCost;
+      var price = generatorStartPrice(p, g.level, g.price);
+      for (var level = 1; level < g.level; level++) {
+        total += price;
+        price *= generatorGrowth(p, level);
+      }
+    });
+    return total;
+  }
+
   function checkGeneratorGrowth(p, problems) {
     if (!(p.genGrowthBase >= 1) || !(p.genGrowthStep >= 0) || !(generatorGrowth(p, 1) > 1)) {
       problems.push('Рост цены генераторов: база ≥ 1, шаг ≥ 0, и вместе больше 1');
@@ -626,6 +657,8 @@
     formatDuration: formatDuration,
     fastestOrder: fastestOrder,
     generatorGrowth: generatorGrowth,
+    generatorStartPrice: generatorStartPrice,
+    candyRunTotal: candyRunTotal,
     optimizeCandy: optimizeCandy,
     simulateCandy: simulateCandy,
     optimizeSpiders: optimizeSpiders,
